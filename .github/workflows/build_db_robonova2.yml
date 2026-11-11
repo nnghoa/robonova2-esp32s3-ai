@@ -1,0 +1,53 @@
+name: Build DB-Robonova2 ESP32-S3 AI Firmware
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-robonova2:
+    name: Build db-robonova2-s3 (ESP-IDF v5.5)
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v5.5
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Compile & Merge Binary (0x0) for ESP32-S3 N16R8
+        shell: bash
+        run: |
+          source $IDF_PATH/export.sh
+          python scripts/release.py db-robonova2-s3 --name db-robonova2-s3
+          cp build/merged-binary.bin build/firmware_db_robonova2_s3_0x0.bin
+          ls -lh build/firmware_db_robonova2_s3_0x0.bin releases/
+
+      - name: Upload Firmware Artifact (.bin at 0x0)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware_db_robonova2_s3_0x0
+          path: |
+            build/firmware_db_robonova2_s3_0x0.bin
+            releases/*.zip
+          if-no-files-found: error
+
+      - name: Publish Direct .bin to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.1.0-robonova2
+          name: "DB-Robonova2 ESP32-S3 Xiaozhi AI Firmware (Flash at 0x0)"
+          body: |
+            Firmware AI Tiếng Việt dành riêng cho **DB-Robonova2 ESP32-S3 (N16R8)**:
+            - Đầy đủ 63 động tác gốc `K1`–`K68` qua UART `9600 bps` (`TX=GPIO42`, `RX=GPIO41`)
+            - Web Control + WebSocket thời gian thực tại `http://<IP>:8080`
+            - Hỗ trợ màn hình `1.54" ST7789 240x240` (không gắn màn vẫn chạy bình thường)
+            - Nhạc trực tuyến, Đài Radio VOV, chế độ vừa hát vừa nhảy & cảm biến Mắt Siêu Âm + Chân `10-NK`
+            - **Cách nạp:** Tải file `firmware_db_robonova2_s3_0x0.bin` bên dưới và nạp tại địa chỉ **`0x0`** trên https://tienhuyiot.github.io/esp_web_flasher/
+          files: |
+            build/firmware_db_robonova2_s3_0x0.bin
+            releases/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
