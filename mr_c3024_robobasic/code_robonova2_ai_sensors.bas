@@ -15,7 +15,7 @@ DIM A16 AS BYTE
 DIM A26 AS BYTE
 DIM BTOut AS BYTE ' RS-232 output on ETX 
 DIM BT AS BYTE 'RS-232 input on ERX 
-DIM s_loop AS BYTE
+DIM s_loop AS INTEGER
 DIM s_batt AS BYTE
 DIM s_sonar AS BYTE
 DIM s_flags AS BYTE
@@ -110,7 +110,8 @@ main_exit:
 '================================================
 send_ai_telemetry:
 	s_loop = s_loop + 1
-	IF s_loop < 15 THEN RETURN
+	' Chi gui telemetry moi ~200 vong MAIN de khong lam ngop cong ETX (chinh so nay neu can)
+	IF s_loop < 200 THEN RETURN
 	s_loop = 0
 	s_batt = AD(6)
 	s_flags = 0

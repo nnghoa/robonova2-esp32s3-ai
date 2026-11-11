@@ -16,6 +16,11 @@ Bộ mã nguồn này được thiết kế chuyên biệt cho **MINIROBOT Robon
 
 > **Lưu ý an toàn khi nạp code:** Khi cắm cáp USB từ máy tính vào ESP32-S3 để nạp lần đầu, nên **tắt công tắc nguồn của Robot** (hoặc rút dây `5V` nối từ `MR-C3024FX`) để tránh xung nguồn 5V USB và 5V BEC của robot. Sau khi nạp xong có thể cập nhật không dây qua OTA (`http://<IP>/ota`).
 
+> **⚠ Cảnh báo mức điện áp UART:** `MR-C3024FX` là mạch logic **5V**, còn chân GPIO của ESP32-S3 chỉ chịu tối đa **3.3V**.
+> - Dây **`ETX (chân A)` → `GPIO 41`** phải qua **cầu phân áp** (VD: điện trở 1kΩ nối tiếp từ `ETX` vào `GPIO 41`, và 2kΩ từ `GPIO 41` xuống `GND`) hoặc module chuyển mức logic 2 chiều. Nối thẳng lâu ngày có thể hỏng chân GPIO 41.
+> - Dây **`GPIO 42` → `ERX (chân a)`** (3.3V vào mạch 5V) thường vẫn chạy được nối thẳng. Nếu robot nhận lệnh chập chờn thì dùng module chuyển mức logic.
+> - Nếu anh chỉ dùng code hãng gốc (không cần đọc cảm biến), có thể **không nối dây `GPIO 41`** — ESP32-S3 vẫn điều khiển đủ động tác.
+
 ### 1.2. Micro I2S `INMP441`
 - `VDD` → `3.3V` | `GND` → `GND` | `L/R` → `GND`
 - `WS` → **`GPIO 4`**

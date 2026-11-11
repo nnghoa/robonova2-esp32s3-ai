@@ -102,6 +102,7 @@ private:
     std::atomic<bool> dance_with_music_{false};
     std::atomic<bool> auto_sensor_mode_{false};
     std::atomic<bool> auto_climb_stairs_{false};
+    std::atomic<bool> ack_supported_{false};  // true khi MR-C3024FX đã gửi ít nhất 1 byte ACK '!'
 
     mutable std::mutex state_mutex_;
     std::string current_action_name_ = "Đứng nghỉ";

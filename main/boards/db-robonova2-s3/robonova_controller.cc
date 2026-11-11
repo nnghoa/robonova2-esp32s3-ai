@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <sstream>
 
 #include "application.h"
@@ -135,6 +136,65 @@ const AliasPair kActionAliases[] = {
     {"dance2", 65}, {"dance3", 68}, {"breakdance", 59}, {"hiphop", 59},
 };
 
+// Giải mã 1 ký tự UTF-8 tại vị trí i, trả về codepoint và tăng i
+uint32_t DecodeUtf8(const std::string& s, size_t& i) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c < 0x80) {
+        i += 1;
+        return c;
+    }
+    if ((c >> 5) == 0x6 && i + 1 < s.size()) {
+        uint32_t cp = ((c & 0x1F) << 6) | (static_cast<unsigned char>(s[i + 1]) & 0x3F);
+        i += 2;
+        return cp;
+    }
+    if ((c >> 4) == 0xE && i + 2 < s.size()) {
+        uint32_t cp = ((c & 0x0F) << 12) |
+                      ((static_cast<unsigned char>(s[i + 1]) & 0x3F) << 6) |
+                      (static_cast<unsigned char>(s[i + 2]) & 0x3F);
+        i += 3;
+        return cp;
+    }
+    if ((c >> 3) == 0x1E && i + 3 < s.size()) {
+        uint32_t cp = ((c & 0x07) << 18) |
+                      ((static_cast<unsigned char>(s[i + 1]) & 0x3F) << 12) |
+                      ((static_cast<unsigned char>(s[i + 2]) & 0x3F) << 6) |
+                      (static_cast<unsigned char>(s[i + 3]) & 0x3F);
+        i += 4;
+        return cp;
+    }
+    i += 1;
+    return 0;
+}
+
+// Bỏ dấu tiếng Việt: "Đi tới" -> "ditoi", "Nhảy" -> "nhay" để khớp từ điển đồng nghĩa
+char FoldVietnamese(uint32_t cp) {
+    static const std::map<uint32_t, char> fold_map = []() {
+        struct Group { char base; const char* chars; };
+        const Group groups[] = {
+            {'a', "àáạảãâầấậẩẫăằắặẳẵÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴ"},
+            {'e', "èéẹẻẽêềếệểễÈÉẸẺẼÊỀẾỆỂỄ"},
+            {'i', "ìíịỉĩÌÍỊỈĨ"},
+            {'o', "òóọỏõôồốộổỗơờớợởỡÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠ"},
+            {'u', "ùúụủũưừứựửữÙÚỤỦŨƯỪỨỰỬỮ"},
+            {'y', "ỳýỵỷỹỲÝỴỶỸ"},
+            {'d', "đĐ"},
+        };
+        std::map<uint32_t, char> m;
+        for (const auto& g : groups) {
+            std::string s(g.chars);
+            size_t i = 0;
+            while (i < s.size()) {
+                uint32_t cp = DecodeUtf8(s, i);
+                if (cp != 0) m[cp] = g.base;
+            }
+        }
+        return m;
+    }();
+    auto it = fold_map.find(cp);
+    return it == fold_map.end() ? 0 : it->second;
+}
+
 bool IsMusicOrRadioActive() {
     auto& app = Application::GetInstance();
     auto* radio = app.GetRadio();
@@ -195,9 +255,10 @@ void RobonovaController::Initialize() {
     action_queue_ = xQueueCreate(32, sizeof(QueuedItem));
     ack_sem_ = xSemaphoreCreateBinary();
 
-    xTaskCreatePinnedToCore(ActionTaskEntry, "robonova_act", 4096, this, 5, &action_task_handle_, 1);
-    xTaskCreatePinnedToCore(UartRxTaskEntry, "robonova_rx", 4096, this, 5, &rx_task_handle_, 1);
-    xTaskCreatePinnedToCore(AutoBehaviorTaskEntry, "robonova_auto", 4096, this, 4, &auto_task_handle_, 1);
+    // Stack 6KB: các task này gọi BuildStatusJson (cJSON + std::string) và broadcast WebSocket
+    xTaskCreatePinnedToCore(ActionTaskEntry, "robonova_act", 6144, this, 5, &action_task_handle_, 1);
+    xTaskCreatePinnedToCore(UartRxTaskEntry, "robonova_rx", 6144, this, 5, &rx_task_handle_, 1);
+    xTaskCreatePinnedToCore(AutoBehaviorTaskEntry, "robonova_auto", 6144, this, 4, &auto_task_handle_, 1);
 
     initialized_ = true;
     ESP_LOGI(TAG, "RobonovaController initialized on UART%d (TX=%d, RX=%d, %d bps, 63 actions K1..K68)",
@@ -223,9 +284,19 @@ const RobonovaActionInfo* RobonovaController::FindActionByK(int k_num) {
 std::string RobonovaController::NormalizeKey(const std::string& input) {
     std::string out;
     out.reserve(input.size());
-    for (unsigned char c : input) {
-        if (std::isalnum(c)) {
-            out.push_back(static_cast<char>(std::tolower(c)));
+    size_t i = 0;
+    while (i < input.size()) {
+        uint32_t cp = DecodeUtf8(input, i);
+        char c = 0;
+        if (cp > 0 && cp < 0x80) {
+            if (std::isalnum(static_cast<int>(cp))) {
+                c = static_cast<char>(std::tolower(static_cast<int>(cp)));
+            }
+        } else if (cp >= 0x80) {
+            c = FoldVietnamese(cp);
+        }
+        if (c != 0) {
+            out.push_back(c);
         }
     }
     return out;
@@ -272,7 +343,11 @@ const RobonovaActionInfo* RobonovaController::FindActionBySlugOrName(const std::
         }
     }
 
-    // Khớp gần đúng (chứa từ khóa trong slug hoặc tên tiếng Việt)
+    // Khớp gần đúng theo slug — chỉ áp dụng khi từ khóa đủ dài (>= 4 ký tự)
+    // để tránh nhầm động tác (VD: "m" khớp nhầm "simple_dance")
+    if (norm.size() < 4) {
+        return nullptr;
+    }
     for (const auto& item : kRobonovaActions) {
         std::string slug_norm = NormalizeKey(item.slug);
         if (slug_norm.find(norm) != std::string::npos || norm.find(slug_norm) != std::string::npos) {
@@ -441,17 +516,29 @@ void RobonovaController::RunActionTask() {
             SendRawUartByte(item.uart_byte);
             NotifyStatusChanged();
 
-            // Chờ động tác hoàn tất: ưu tiên nhận byte ACK ('!' = 33) từ MR-C3024FX,
-            // nếu mạch robot chạy code hãng gốc (chưa nạp bản cảm biến) thì chờ theo duration_ms.
+            // Chờ động tác hoàn tất:
+            // - Nếu MR-C3024FX chạy bản BASIC cảm biến (có gửi ACK '!'), chờ ACK thật,
+            //   tối đa duration_ms + 10s để không cắt ngang động tác dài hơn ước lượng.
+            // - Nếu chạy code hãng gốc (không ACK), chờ theo duration_ms + 400ms dự phòng,
+            //   vì MR-C3024FX chỉ đọc ERX khi đã quay về MAIN (byte gửi sớm sẽ bị mất).
+            const bool use_ack = ack_supported_.load();
+            const int timeout_ms = use_ack ? (item.duration_ms + 10000) : (item.duration_ms + 400);
             int waited_ms = 0;
             const int slice_ms = 100;
-            while (waited_ms < item.duration_ms && !abort_current_wait_.load()) {
+            bool got_ack = false;
+            while (waited_ms < timeout_ms && !abort_current_wait_.load()) {
                 if (xSemaphoreTake(ack_sem_, pdMS_TO_TICKS(slice_ms)) == pdTRUE) {
                     ESP_LOGI(TAG, "Received action-complete ACK from MR-C3024FX for K%d", item.k_num);
+                    got_ack = true;
                     break;
                 }
                 waited_ms += slice_ms;
             }
+            if (use_ack && !got_ack && !abort_current_wait_.load()) {
+                ESP_LOGW(TAG, "No ACK for K%d after %d ms", item.k_num, timeout_ms);
+            }
+            // Cho MR-C3024FX thời gian quay về vòng ERX trước khi nhận byte tiếp theo
+            vTaskDelay(pdMS_TO_TICKS(150));
 
             if (uxQueueMessagesWaiting(action_queue_) == 0) {
                 is_executing_.store(false);
@@ -502,6 +589,10 @@ void RobonovaController::RunUartRxTask() {
 
             // Byte '!' (DEC 33): MR-C3024FX báo vừa hoàn thành động tác tại main_exit
             if (frame_idx == 0 && b == '!') {
+                if (!ack_supported_.load()) {
+                    ESP_LOGI(TAG, "MR-C3024FX supports action-complete ACK (sensor BASIC detected)");
+                }
+                ack_supported_.store(true);
                 xSemaphoreGive(ack_sem_);
                 continue;
             }
@@ -583,14 +674,24 @@ void RobonovaController::RunAutoBehaviorTask() {
     const int kDanceCycle[] = {6, 64, 57, 65, 55, 68, 59};
     size_t dance_idx = 0;
     bool turn_toggle = false;
+    int64_t music_idle_since_ms = 0;
 
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(400));
 
         // 1. Chế độ Nhảy theo nhạc / Radio VOV
         if (dance_with_music_.load()) {
-            if (!IsMusicOrRadioActive()) {
-                // Nếu nhạc chưa kịp tải xong trong 3s đầu thì vẫn chờ, chỉ xếp động tác khi rảnh
+            // Tự tắt chế độ nhảy khi nhạc/đài đã dừng quá 15 giây (có thời gian chờ tải bài)
+            int64_t now_ms = esp_timer_get_time() / 1000;
+            if (IsMusicOrRadioActive()) {
+                music_idle_since_ms = 0;
+            } else if (music_idle_since_ms == 0) {
+                music_idle_since_ms = now_ms;
+            } else if (now_ms - music_idle_since_ms > 15000) {
+                ESP_LOGI(TAG, "Music stopped > 15s -> disable dance-with-music");
+                music_idle_since_ms = 0;
+                SetDanceWithMusic(false);
+                continue;
             }
             if (!is_executing_.load() && GetQueueCount() == 0) {
                 QueueActionByK(kDanceCycle[dance_idx % (sizeof(kDanceCycle) / sizeof(kDanceCycle[0]))], 1);

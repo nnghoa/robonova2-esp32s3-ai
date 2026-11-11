@@ -4,8 +4,10 @@
 #include <esp_log.h>
 #include <sys/socket.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <vector>
 
 #include "application.h"
@@ -126,7 +128,7 @@ a{color:var(--pri);text-decoration:none}
       <button onclick="playRadio('VOV1')">📻 VOV1</button>
       <button onclick="playRadio('VOV2')">📻 VOV2</button>
       <button onclick="playRadio('VOV3')">📻 VOV3</button>
-      <button onclick="playRadio('VOVGT_HN')">🚗 VOV GT</button>
+      <button onclick="playRadio('VOV_GT_HN')">🚗 VOV GT</button>
       <button onclick="sendCmd({cmd:'stop_media'})">⏹ Tắt nhạc/đài</button>
     </div>
     <div class="row">
@@ -167,6 +169,7 @@ a{color:var(--pri);text-decoration:none}
 <div class="foot">
   DB-Robonova2 ESP32-S3 Xiaozhi AI • UART 9600 (TX=GPIO42, RX=GPIO41) • ST7789 240x240 •
   <a href="#" onclick="sendCmd({cmd:'toggle_spi_mode'});return false;">Đổi SPI Mode ST7789 (0/3)</a> •
+  <a href="#" onclick="if(confirm('Bật/Tắt màn hình ST7789 và khởi động lại?'))sendCmd({cmd:'toggle_lcd'});return false;">Bật/Tắt màn hình</a> •
   <a href="#" onclick="location.href='http://'+location.hostname+'/ota';return false;">Cập nhật Firmware OTA (Cổng 80)</a>
 </div>
 
@@ -227,6 +230,34 @@ connectWs();
 </body>
 </html>
 )ROBOHTML";
+
+}  // namespace
+
+namespace {
+
+// Chạy tác vụ nặng (tải nhạc qua mạng...) trong task riêng để không chặn
+// vòng lặp chính của Application hoặc task HTTP server.
+void RunAsync(const char* name, std::function<void()> fn) {
+    auto* heap_fn = new std::function<void()>(std::move(fn));
+    BaseType_t ok = xTaskCreate(
+        [](void* arg) {
+            auto* f = static_cast<std::function<void()>*>(arg);
+            (*f)();
+            delete f;
+            vTaskDelete(nullptr);
+        },
+        name, 8192, heap_fn, 3, nullptr);
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create async task %s", name);
+        delete heap_fn;
+    }
+}
+
+struct BroadcastJob {
+    httpd_handle_t server;
+    std::string payload;
+    std::vector<int> fds;
+};
 
 }  // namespace
 
@@ -483,7 +514,7 @@ std::string RobonovaWebServer::ProcessJsonCommand(const char* json_str, size_t l
         std::string song_name = cJSON_IsString(song) ? song->valuestring : "";
         bool with_dance = cJSON_IsTrue(dance);
         if (!song_name.empty()) {
-            Application::GetInstance().Schedule([song_name, with_dance]() {
+            RunAsync("rn_music", [song_name, with_dance]() {
                 if (auto* radio = Application::GetInstance().GetRadio()) {
                     if (radio->IsPlaying()) radio->Stop();
                 }
@@ -496,7 +527,7 @@ std::string RobonovaWebServer::ProcessJsonCommand(const char* json_str, size_t l
     } else if (cmd == "radio") {
         cJSON* st = cJSON_GetObjectItem(root, "station");
         std::string station = cJSON_IsString(st) ? st->valuestring : "VOV1";
-        Application::GetInstance().Schedule([station]() {
+        RunAsync("rn_radio", [station]() {
             if (auto* music = Application::GetInstance().GetMusic()) {
                 music->StopStreaming();
             }
@@ -506,13 +537,21 @@ std::string RobonovaWebServer::ProcessJsonCommand(const char* json_str, size_t l
         });
     } else if (cmd == "stop_media") {
         ctrl.SetDanceWithMusic(false);
-        Application::GetInstance().Schedule([]() {
+        RunAsync("rn_stop", []() {
             if (auto* music = Application::GetInstance().GetMusic()) {
                 music->StopStreaming();
             }
             if (auto* radio = Application::GetInstance().GetRadio()) {
                 radio->Stop();
             }
+        });
+    } else if (cmd == "toggle_lcd") {
+        Settings settings("robonova", true);
+        int cur = settings.GetInt("lcd_enabled", 1);
+        settings.SetInt("lcd_enabled", cur ? 0 : 1);
+        RunAsync("rn_reboot", []() {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            Application::GetInstance().Reboot();
         });
     } else if (cmd == "toggle_spi_mode") {
         Settings settings("robonova", true);
@@ -522,7 +561,7 @@ std::string RobonovaWebServer::ProcessJsonCommand(const char* json_str, size_t l
         if (auto* disp = Board::GetInstance().GetDisplay()) {
             disp->ShowNotification("SPI Mode -> " + std::to_string(next) + " (Khởi động lại)", 3000);
         }
-        Application::GetInstance().Schedule([]() {
+        RunAsync("rn_reboot", []() {
             vTaskDelay(pdMS_TO_TICKS(1000));
             Application::GetInstance().Reboot();
         });
@@ -537,25 +576,41 @@ void RobonovaWebServer::BroadcastStatus(const std::string& status_json) {
         return;
     }
 
-    std::vector<int> fds;
+    auto* job = new BroadcastJob{server_, status_json, {}};
     {
         std::lock_guard<std::mutex> lock(clients_mutex_);
-        fds.assign(ws_clients_.begin(), ws_clients_.end());
+        job->fds.assign(ws_clients_.begin(), ws_clients_.end());
     }
-    if (fds.empty()) {
+    if (job->fds.empty()) {
+        delete job;
         return;
     }
 
-    for (int fd : fds) {
-        httpd_ws_frame_t pkt = {};
-        pkt.type = HTTPD_WS_TYPE_TEXT;
-        pkt.payload = reinterpret_cast<uint8_t*>(const_cast<char*>(status_json.data()));
-        pkt.len = status_json.size();
-
-        esp_err_t err = httpd_ws_send_frame_async(server_, fd, &pkt);
-        if (err != ESP_OK) {
-            std::lock_guard<std::mutex> lock(clients_mutex_);
-            ws_clients_.erase(fd);
+    // Đưa việc gửi vào chính task của HTTP server (httpd_queue_work) để các khung
+    // WebSocket từ nhiều task (UART, động tác, MCP) không ghi chồng lên cùng 1 socket.
+    esp_err_t err = httpd_queue_work(server_, [](void* arg) {
+        auto* j = static_cast<BroadcastJob*>(arg);
+        auto& self = RobonovaWebServer::GetInstance();
+        for (int fd : j->fds) {
+            // Bỏ qua socket đã đóng hoặc đã bị tái sử dụng cho kết nối HTTP thường
+            if (httpd_ws_get_fd_info(j->server, fd) != HTTPD_WS_CLIENT_WEBSOCKET) {
+                std::lock_guard<std::mutex> lock(self.clients_mutex_);
+                self.ws_clients_.erase(fd);
+                continue;
+            }
+            httpd_ws_frame_t pkt = {};
+            pkt.type = HTTPD_WS_TYPE_TEXT;
+            pkt.payload = reinterpret_cast<uint8_t*>(j->payload.data());
+            pkt.len = j->payload.size();
+            if (httpd_ws_send_frame_async(j->server, fd, &pkt) != ESP_OK) {
+                std::lock_guard<std::mutex> lock(self.clients_mutex_);
+                self.ws_clients_.erase(fd);
+            }
         }
+        delete j;
+    }, job);
+
+    if (err != ESP_OK) {
+        delete job;
     }
 }
