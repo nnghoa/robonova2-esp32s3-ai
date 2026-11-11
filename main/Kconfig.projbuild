@@ -114,7 +114,7 @@ endchoice
 
 choice BOARD_TYPE
     prompt "Board Type"
-    default BOARD_TYPE_DB_ROBONOVA2_S3
+    default BOARD_TYPE_BREAD_COMPACT_WIFI
     help
         Board type. 开发板类型
     config BOARD_TYPE_DB_ROBONOVA2_S3
@@ -420,8 +420,8 @@ choice BOARD_TYPE
         select PARTITION_TABLE_CUSTOM
     config PARTITION_TABLE_CUSTOM_FILENAME
         default "partitions/v2/16m_otto_robot.csv"
-        depends on BOARD_TYPE_OTTO_ROBOT || BOARD_TYPE_DB_ROBONOVA2_S3
-        string "Custom 16MB partition table: 16m_otto_robot.csv"
+        depends on BOARD_TYPE_OTTO_ROBOT
+        string "OttoRobot partition table: 16m_otto_robot.csv"
     config BOARD_TYPE_ELECTRON_BOT
         bool "electronBot"
         depends on IDF_TARGET_ESP32S3

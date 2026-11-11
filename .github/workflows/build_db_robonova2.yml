@@ -2,6 +2,9 @@ name: Build DB-Robonova2 ESP32-S3 AI Firmware
 
 on:
   push:
+    branches:
+      - main
+      - robonova2-vn
   workflow_dispatch:
 
 permissions:
@@ -20,10 +23,23 @@ jobs:
       - name: Compile & Merge Binary (0x0) for ESP32-S3 N16R8
         shell: bash
         run: |
+          set -o pipefail
+          git config --global --add safe.directory '*'
           source $IDF_PATH/export.sh
-          python scripts/release.py db-robonova2-s3 --name db-robonova2-s3
+          python scripts/release.py db-robonova2-s3 --name db-robonova2-s3 2>&1 | tee build_full.log
           cp build/merged-binary.bin build/firmware_db_robonova2_s3_0x0.bin
           ls -lh build/firmware_db_robonova2_s3_0x0.bin releases/
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-debug-log
+          prerelease: true
+          name: "Build Debug Log"
+          files: build_full.log
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Firmware Artifact (.bin at 0x0)
         uses: actions/upload-artifact@v4
