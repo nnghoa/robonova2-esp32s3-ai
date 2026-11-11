@@ -350,7 +350,7 @@ esp_err_t RobonovaWebServer::HandleApiCommandPost(httpd_req_t* req) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read body");
         return ESP_FAIL;
     }
-    std::string reply = ProcessJsonCommand(buf.data(), static_cast<size_t>(received));
+    std::string reply = GetInstance().ProcessJsonCommand(buf.data(), static_cast<size_t>(received));
     httpd_resp_set_type(req, "application/json; charset=utf-8");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_sendstr(req, reply.c_str());
