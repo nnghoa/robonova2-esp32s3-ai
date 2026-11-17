@@ -27,6 +27,7 @@ jobs:
           git config --global --add safe.directory '*'
           source $IDF_PATH/export.sh
           python scripts/release.py db-robonova2-s3 --name db-robonova2-s3 2>&1 | tee build_full.log
+          grep -E "WAKE_WORD|SR_MN|SR_WN" sdkconfig || true
           cp build/merged-binary.bin build/firmware_db_robonova2_s3_0x0.bin
           ls -lh build/firmware_db_robonova2_s3_0x0.bin releases/
 
@@ -53,8 +54,8 @@ jobs:
       - name: Publish Direct .bin to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.0-robonova2
-          name: "DB-Robonova2 ESP32-S3 Xiaozhi AI Firmware (Flash at 0x0)"
+          tag_name: v2.2.0-robonova2
+          name: "DB-Robonova2 ESP32-S3 Xiaozhi AI v2.2.0 (Wake: Hi Mina + 3-Wire Autonomous)"
           body: |
             Firmware AI Tiếng Việt dành riêng cho **DB-Robonova2 ESP32-S3 (N16R8)**:
             - Đầy đủ 63 động tác gốc `K1`–`K68` qua UART `9600 bps` (`TX=GPIO42`, `RX=GPIO41`)

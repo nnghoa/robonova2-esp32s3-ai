@@ -103,6 +103,11 @@ const std::vector<RobonovaActionInfo> kRobonovaActions = {
     {66, 106, "climb_stairs",     "Leo bậc cầu thang",        "special", 8500, "confident"},
     {67, 107, "pushup_2",         "Chống đẩy 2 (10 nhịp)",    "martial", 9500, "confident"},
     {68, 108, "dance_3",          "Nhảy Dance 3",             "dance",   8500, "happy"},
+
+    // --- Nhóm 4: K69..K71 (DEC 109..111) - Tự hành 3 dây trên mạch BJROBOT SUPER-M V6.1 (SONAR(8) + AD(6)) ---
+    {69, 109, "auto_explore",     "Bật Tự hành (Né cản + Leo bậc)", "special", 1200, "confident"},
+    {70, 110, "stop_auto",        "Dừng Tự hành & Đứng nghiêm",     "basic",   1800, "staticstate"},
+    {71, 111, "test_sensors",     "Test Mắt Siêu Âm & Chân 10-NK",  "special", 3200, "cool"},
 };
 
 struct AliasPair {
@@ -134,6 +139,9 @@ const AliasPair kActionAliases[] = {
     {"leocauthang", 66}, {"cauthang", 66}, {"stairs", 66}, {"upstair", 66},
     {"nhay", 64}, {"nhaymua", 64}, {"dance", 64}, {"dance1", 64},
     {"dance2", 65}, {"dance3", 68}, {"breakdance", 59}, {"hiphop", 59},
+    {"tuhanh", 69}, {"battuhanh", 69}, {"nevatcan", 69}, {"tranhvatcan", 69}, {"autoexplore", 69},
+    {"dungtuhanh", 70}, {"tattuhanh", 70}, {"dungnghiem", 70}, {"stopauto", 70},
+    {"testcambien", 71}, {"kiemtracambien", 71}, {"testsensors", 71}, {"testmat", 71},
 };
 
 // Giải mã 1 ký tự UTF-8 tại vị trí i, trả về codepoint và tăng i
@@ -245,11 +253,11 @@ void RobonovaController::Initialize() {
                                  UART_PIN_NO_CHANGE,
                                  UART_PIN_NO_CHANGE));
 
-    // Khôi phục cấu hình chế độ cảm biến từ NVS
+    // Khởi động luôn ở trạng thái đứng an toàn (tắt tự hành lúc mới cấp nguồn)
     {
         Settings settings("robonova", false);
-        auto_sensor_mode_.store(settings.GetInt("auto_sensor", 0) != 0);
-        auto_climb_stairs_.store(settings.GetInt("auto_stairs", 0) != 0);
+        auto_sensor_mode_.store(false);
+        auto_climb_stairs_.store(settings.GetInt("auto_stairs", 1) != 0);
     }
 
     action_queue_ = xQueueCreate(32, sizeof(QueuedItem));
@@ -386,6 +394,13 @@ bool RobonovaController::QueueActionByK(int k_num, int repeat) {
         .emotion = info->emotion,
     };
 
+    if (k_num == 69) {
+        auto_sensor_mode_.store(true);
+    } else {
+        // Mọi lệnh động tác khác trên SUPER-M V6.1 đều tự tắt AUTO_MODE
+        auto_sensor_mode_.store(false);
+    }
+
     bool ok = false;
     for (int i = 0; i < repeat; ++i) {
         if (xQueueSend(action_queue_, &item, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -418,6 +433,7 @@ int RobonovaController::QueueCombo(const std::string& combo_csv) {
 
 void RobonovaController::StopAll(bool relax_servos) {
     dance_with_music_.store(false);
+    auto_sensor_mode_.store(false);
     abort_current_wait_.store(true);
     if (action_queue_ != nullptr) {
         xQueueReset(action_queue_);
@@ -426,17 +442,26 @@ void RobonovaController::StopAll(bool relax_servos) {
         xSemaphoreGive(ack_sem_);
     }
     if (relax_servos) {
-        QueueActionByK(16, 1);  // K16: Ngồi nghỉ / Tắt mở servo
+        QueueActionByK(16, 1);  // K16: Ngồi nghỉ / Tắt mở servo (cũng tự tắt AUTO_MODE trên SUPER-M V6.1)
     } else {
+        // Gửi mã DEC 110 ('n' = K70) qua 3 dây để SUPER-M V6.1 dừng tự hành ngay và về thế đứng chuẩn
+        SendRawUartByte(110);
+        auto* display = Board::GetInstance().GetDisplay();
+        if (display != nullptr && !IsMusicOrRadioActive()) {
+            display->SetEmotion("staticstate");
+        }
         std::lock_guard<std::mutex> lock(state_mutex_);
         current_action_k_.store(0);
-        current_action_name_ = "Đã dừng (Đứng chuẩn)";
+        current_action_name_ = "Đã dừng (Đứng nghiêm)";
     }
     NotifyStatusChanged();
 }
 
 void RobonovaController::SetDanceWithMusic(bool enable) {
     dance_with_music_.store(enable);
+    if (enable) {
+        auto_sensor_mode_.store(false);
+    }
     if (!enable && action_queue_ != nullptr) {
         xQueueReset(action_queue_);
         abort_current_wait_.store(true);
@@ -445,9 +470,41 @@ void RobonovaController::SetDanceWithMusic(bool enable) {
 }
 
 void RobonovaController::SetAutoSensorMode(bool enable) {
-    auto_sensor_mode_.store(enable);
+    bool prev = auto_sensor_mode_.exchange(enable);
+    if (enable) {
+        dance_with_music_.store(false);
+    }
     Settings settings("robonova", true);
     settings.SetInt("auto_sensor", enable ? 1 : 0);
+
+    // Chế độ nối 3 dây trực tiếp (GPIO 42 -> ERX, không dùng dây thứ 4 ETX -> GPIO 41):
+    // Gửi thẳng mã 109 ('m') để mạch BJROBOT SUPER-M V6.1 tự chạy vòng lặp SONAR(8) + AD(6),
+    // hoặc gửi 110 ('n') để dừng tự hành và đứng nghiêm ngay lập tức.
+    if (!GetTelemetry().connected) {
+        if (action_queue_ != nullptr) {
+            xQueueReset(action_queue_);
+        }
+        abort_current_wait_.store(true);
+        if (enable) {
+            SendRawUartByte(109);
+            auto* display = Board::GetInstance().GetDisplay();
+            if (display != nullptr && !IsMusicOrRadioActive()) {
+                display->SetEmotion("confident");
+            }
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            current_action_k_.store(69);
+            current_action_name_ = "🧭 Tự hành 3 dây (SONAR8 + Chân 10-NK)";
+        } else if (prev) {
+            SendRawUartByte(110);
+            auto* display = Board::GetInstance().GetDisplay();
+            if (display != nullptr && !IsMusicOrRadioActive()) {
+                display->SetEmotion("staticstate");
+            }
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            current_action_k_.store(0);
+            current_action_name_ = "Đã dừng Tự hành (Đứng nghiêm)";
+        }
+    }
     NotifyStatusChanged();
 }
 
@@ -542,12 +599,14 @@ void RobonovaController::RunActionTask() {
 
             if (uxQueueMessagesWaiting(action_queue_) == 0) {
                 is_executing_.store(false);
-                current_action_k_.store(0);
+                current_action_k_.store(auto_sensor_mode_.load() ? 69 : 0);
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
-                    current_action_name_ = "Đứng nghỉ";
+                    current_action_name_ = auto_sensor_mode_.load()
+                        ? "🧭 Tự hành 3 dây (SONAR8 + Chân 10-NK)"
+                        : "Đứng nghỉ";
                 }
-                if (display != nullptr && !IsMusicOrRadioActive()) {
+                if (display != nullptr && !IsMusicOrRadioActive() && !auto_sensor_mode_.load()) {
                     display->SetEmotion("staticstate");
                 }
                 NotifyStatusChanged();
@@ -820,7 +879,9 @@ void RobonovaController::RegisterMcpTools() {
         "handstand (K9 trồng chuối), single_foot (K56 đứng 1 chân), goalkeeper (K54 thủ môn), "
         "tumble_forward (K21 lộn nhào tới), tumble_back (K31 lộn ngược), tumble_left (K28), tumble_right (K30), "
         "standup_back (K19 đứng dậy khi nằm ngửa), standup_front (K25 đứng dậy khi nằm sấp).\n"
-        "- Nhảy múa: simple_dance (K6 lắc thân), dance_1 (K64), dance_2 (K65), dance_3 (K68), break_dance (K59 nhảy breakdance), wing_move (K7).",
+        "- Nhảy múa: simple_dance (K6 lắc thân), dance_1 (K64), dance_2 (K65), dance_3 (K68), break_dance (K59 nhảy breakdance), wing_move (K7).\n"
+        "- Cảm biến & Tự hành 3 dây (BJROBOT SUPER-M V6.1): auto_explore (K69 / DEC 109 bật tự hành né vật cản bằng mắt siêu âm SONAR(8) + tự leo bậc bằng chân 10-NK AD(6)), "
+        "stop_auto (K70 / DEC 110 dừng tự hành về đứng nghiêm), test_sensors (K71 / DEC 111 kiểm tra nhanh mắt siêu âm & cảm biến chân bằng nhạc và cử chỉ).",
         PropertyList({
             Property("action", kPropertyTypeString),
             Property("repeat", kPropertyTypeInteger, 1, 1, 10),
@@ -876,8 +937,8 @@ void RobonovaController::RegisterMcpTools() {
 
     mcp.AddTool(
         "self.robonova.auto_sensor_mode",
-        "Bật/tắt chế độ tự hành thông minh sử dụng cảm biến siêu âm trên mắt và cảm biến khoảng cách 10-NK dưới bàn chân trái "
-        "(tự tránh vật cản, tự đứng dậy khi ngã, tùy chọn tự leo bậc cầu thang).",
+        "Bật/tắt chế độ tự hành thông minh sử dụng mắt siêu âm SONAR(8) và cảm biến khoảng cách 10-NK AD(6) dưới bàn chân "
+        "(hoạt động ngay trên kết nối 3 dây GPIO42->ERX bằng mã lệnh 109/110 trên mạch SUPER-M V6.1, hoặc 4 dây nếu có ETX->GPIO41).",
         PropertyList({
             Property("enable", kPropertyTypeBoolean),
             Property("auto_climb_stairs", kPropertyTypeBoolean, false),

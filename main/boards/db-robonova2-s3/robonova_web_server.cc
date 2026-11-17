@@ -85,11 +85,12 @@ a{color:var(--pri);text-decoration:none}
 </div>
 
 <div class="qbar">
-  <button class="btn-stop" onclick="sendCmd({cmd:'stop'})">⏹ DỪNG KHẨN CẤP</button>
+  <button class="btn-stop" onclick="sendCmd({cmd:'stop'})">⏹ DỪNG KHẨN CẤP (K70)</button>
+  <button class="btn-ok" onclick="sendCmd({cmd:'auto_sensor',enable:true})">🧭 Tự hành 3 dây (K69)</button>
+  <button class="btn-pri" onclick="act(71)">📡 Test Mắt &amp; Chân (K71)</button>
   <button class="btn-pri" onclick="act(1)">🙇 K1 Cúi chào</button>
   <button class="btn-pri" onclick="act(48)">🥋 K48 Kungfu 1</button>
   <button class="btn-ok" onclick="act(64)">💃 K64 Nhảy Dance</button>
-  <button onclick="act(40)">💪 K40 Chống đẩy</button>
   <button onclick="act(16)">🧘 K16 Ngồi/Tắt Servo</button>
 </div>
 
@@ -207,9 +208,9 @@ function updateUi(d){
     bat.textContent='Pin: '+Number(s.battery_voltage||0).toFixed(2)+'V ('+(s.battery_percent||0)+'%)';
     bat.className='pill '+(s.low_battery?'danger':'ok');
   }else{
-    eye.textContent='Mắt Siêu Âm: Chế độ Zin';eye.className='pill';
-    foot.textContent='Chân 10-NK: Chế độ Zin';foot.className='pill';
-    bat.textContent='UART TX->ERX Sẵn sàng';bat.className='pill ok';
+    eye.textContent='Mắt SONAR(8): '+(d.auto_sensor_mode?'Đang Tự hành 3 dây':'Sẵn sàng (3 dây)');eye.className='pill '+(d.auto_sensor_mode?'ok':'');
+    foot.textContent='Chân AD(6): '+(d.auto_sensor_mode?'Đang dò bậc/vật cản':'Sẵn sàng (3 dây)');foot.className='pill '+(d.auto_sensor_mode?'ok':'');
+    bat.textContent='Wake: "Hi Mina" • TX->ERX OK';bat.className='pill ok';
   }
 }
 function setCat(cat,btn){

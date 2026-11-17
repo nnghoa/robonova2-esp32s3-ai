@@ -8,6 +8,7 @@
 #include <esp_mn_models.h>
 #include <esp_mn_speech_commands.h>
 #include <cJSON.h>
+#include <sstream>
 
 
 #define TAG "CustomWakeWord"
@@ -89,11 +90,24 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
     commands_.clear();
 
     if (models_list == nullptr) {
+#if defined(CONFIG_SR_MN_EN_MULTINET7_QUANT) || defined(CONFIG_SR_MN_EN_MULTINET6_QUANT)
+        language_ = "en";
+#else
         language_ = "cn";
+#endif
         models_ = esp_srmodel_init("model");
 #ifdef CONFIG_CUSTOM_WAKE_WORD
         threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
-        commands_.push_back({CONFIG_CUSTOM_WAKE_WORD, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
+        std::stringstream ss(CONFIG_CUSTOM_WAKE_WORD);
+        std::string phrase;
+        while (std::getline(ss, phrase, ';')) {
+            if (!phrase.empty()) {
+                commands_.push_back({phrase, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
+            }
+        }
+        if (commands_.empty()) {
+            commands_.push_back({CONFIG_CUSTOM_WAKE_WORD, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
+        }
 #endif
     } else {
         models_ = models_list;
@@ -124,7 +138,10 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
     for (int i = 0; i < commands_.size(); i++) {
         esp_mn_commands_add(i + 1, commands_[i].command.c_str());
     }
-    esp_mn_commands_update();
+    esp_mn_error_t* mn_err = esp_mn_commands_update();
+    if (mn_err != nullptr) {
+        ESP_LOGW(TAG, "esp_mn_commands_update reported unparsed phrase(s)");
+    }
     
     multinet_->print_active_speech_commands(multinet_model_data_);
     return true;

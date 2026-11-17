@@ -61,6 +61,6 @@
 #define ROBONOVA_WEB_PORT        8080
 #define ROBONOVA_WEB_CTRL_PORT   32769        // Tách riêng với OtaServer (ctrl_port 32768 ở cổng 80)
 
-#define DB_ROBONOVA2_VERSION     "2.1.0-AI"
+#define DB_ROBONOVA2_VERSION     "2.2.0-HI-MINA"
 
 #endif // _BOARD_CONFIG_H_

@@ -841,17 +841,21 @@ def main():
         # Determine language from multinet models
         language = get_language_from_multinet_models(multinet_model_names)
         
-        # Build multinet_model info structure
+        # Build multinet_model info structure (supports ';'-separated wake word aliases)
+        raw_phrases = [p.strip() for p in custom_wake_word_config['wake_word'].split(';') if p.strip()]
+        if not raw_phrases:
+            raw_phrases = [custom_wake_word_config['wake_word']]
         multinet_model_info = {
             "language": language,
             "duration": 3000,  # Default duration in ms
             "threshold": custom_wake_word_config['threshold'],
             "commands": [
                 {
-                    "command": custom_wake_word_config['wake_word'],
+                    "command": phrase,
                     "text": custom_wake_word_config['display'],
                     "action": "wake"
                 }
+                for phrase in raw_phrases
             ]
         }
         print(f"  custom wake word: {custom_wake_word_config['wake_word']} ({custom_wake_word_config['display']})")
