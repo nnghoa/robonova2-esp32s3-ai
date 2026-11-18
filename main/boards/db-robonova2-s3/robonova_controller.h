@@ -50,7 +50,8 @@ public:
     static const RobonovaActionInfo* FindActionBySlugOrName(const std::string& query);
 
     // Điều khiển thực thi động tác
-    bool QueueActionByK(int k_num, int repeat = 1);
+    // from_user=false: lệnh do chính ESP32 tự sinh (vòng tự hành 4 dây / nhảy theo nhạc), không tắt AUTO_MODE
+    bool QueueActionByK(int k_num, int repeat = 1, bool from_user = true);
     bool QueueActionByName(const std::string& name_or_k, int repeat = 1);
     int QueueCombo(const std::string& combo_csv);
     bool SendRawUartByte(uint8_t byte_val);
@@ -102,7 +103,9 @@ private:
     std::atomic<bool> dance_with_music_{false};
     std::atomic<bool> auto_sensor_mode_{false};
     std::atomic<bool> auto_climb_stairs_{false};
-    std::atomic<bool> ack_supported_{false};  // true khi MR-C3024FX đã gửi ít nhất 1 byte ACK '!'
+    std::atomic<bool> ack_supported_{false};  // true khi MR-C3024FX đã gửi ít nhất 2 byte ACK '!'
+    int ack_seen_count_ = 0;                  // chỉ dùng trong task RX
+    int valid_frame_streak_ = 0;              // số gói telemetry hợp lệ liên tiếp (chống nhiễu chân RX hở)
 
     mutable std::mutex state_mutex_;
     std::string current_action_name_ = "Đứng nghỉ";

@@ -252,6 +252,9 @@ void RobonovaController::Initialize() {
                                  ROBONOVA_UART_RX_PIN,
                                  UART_PIN_NO_CHANGE,
                                  UART_PIN_NO_CHANGE));
+    // Nối 3 dây (không cắm ETX -> GPIO 41) thì chân RX bị hở: bật kéo lên để không đọc nhiễu
+    // thành gói telemetry / ACK giả (sẽ làm sai chế độ tự hành và chậm nhịp gửi lệnh).
+    gpio_set_pull_mode(ROBONOVA_UART_RX_PIN, GPIO_PULLUP_ONLY);
 
     // Khởi động luôn ở trạng thái đứng an toàn (tắt tự hành lúc mới cấp nguồn)
     {
@@ -377,7 +380,7 @@ bool RobonovaController::SendRawUartByte(uint8_t byte_val) {
     return written == 1;
 }
 
-bool RobonovaController::QueueActionByK(int k_num, int repeat) {
+bool RobonovaController::QueueActionByK(int k_num, int repeat, bool from_user) {
     const auto* info = FindActionByK(k_num);
     if (info == nullptr) {
         ESP_LOGW(TAG, "Invalid K action: K%d", k_num);
@@ -395,9 +398,20 @@ bool RobonovaController::QueueActionByK(int k_num, int repeat) {
     };
 
     if (k_num == 69) {
+        // Bật tự hành: chỉ gửi 1 lần
+        repeat = 1;
         auto_sensor_mode_.store(true);
-    } else {
-        // Mọi lệnh động tác khác trên SUPER-M V6.1 đều tự tắt AUTO_MODE
+        dance_with_music_.store(false);
+        if (GetTelemetry().connected) {
+            // Nối 4 dây: ESP32 tự điều khiển vòng tự hành, không gửi byte 109 xuống BASIC cũ
+            NotifyStatusChanged();
+            return true;
+        }
+    } else if (k_num == 70) {
+        repeat = 1;
+        auto_sensor_mode_.store(false);
+    } else if (from_user) {
+        // Lệnh người dùng (giọng nói / Web / combo): SUPER-M V6.1 tự thoát AUTO_MODE khi nhận lệnh mới
         auto_sensor_mode_.store(false);
     }
 
@@ -442,17 +456,11 @@ void RobonovaController::StopAll(bool relax_servos) {
         xSemaphoreGive(ack_sem_);
     }
     if (relax_servos) {
-        QueueActionByK(16, 1);  // K16: Ngồi nghỉ / Tắt mở servo (cũng tự tắt AUTO_MODE trên SUPER-M V6.1)
+        QueueActionByK(16, 1, false);  // K16: Ngồi nghỉ / Tắt mở servo (cũng tự tắt AUTO_MODE trên SUPER-M V6.1)
     } else {
-        // Gửi mã DEC 110 ('n' = K70) qua 3 dây để SUPER-M V6.1 dừng tự hành ngay và về thế đứng chuẩn
-        SendRawUartByte(110);
-        auto* display = Board::GetInstance().GetDisplay();
-        if (display != nullptr && !IsMusicOrRadioActive()) {
-            display->SetEmotion("staticstate");
-        }
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        current_action_k_.store(0);
-        current_action_name_ = "Đã dừng (Đứng nghiêm)";
+        // K70 (DEC 110 'n'): SUPER-M V6.1 dừng tự hành và về thế đứng chuẩn.
+        // Byte nằm chờ trong UDR0 của ATmega nên dù robot đang múa dở vẫn được đọc ở vòng ERX kế tiếp.
+        QueueActionByK(70, 1, false);
     }
     NotifyStatusChanged();
 }
@@ -477,33 +485,15 @@ void RobonovaController::SetAutoSensorMode(bool enable) {
     Settings settings("robonova", true);
     settings.SetInt("auto_sensor", enable ? 1 : 0);
 
-    // Chế độ nối 3 dây trực tiếp (GPIO 42 -> ERX, không dùng dây thứ 4 ETX -> GPIO 41):
-    // Gửi thẳng mã 109 ('m') để mạch BJROBOT SUPER-M V6.1 tự chạy vòng lặp SONAR(8) + AD(6),
-    // hoặc gửi 110 ('n') để dừng tự hành và đứng nghiêm ngay lập tức.
+    // Chế độ nối 3 dây (GPIO 42 -> ERX, không có ETX -> GPIO 41):
+    // gửi K69 (109 'm') để SUPER-M V6.1 tự chạy vòng SONAR(8) + AD(6), hoặc K70 (110 'n') để dừng.
+    // Đi qua hàng đợi để giữ đúng nhịp gửi, không chèn byte giữa lúc ActionTask đang gửi.
+    // Luôn gửi lại lệnh (kể cả khi trạng thái ESP32 đã giống) để đồng bộ nếu robot từng bị điều khiển từ Mina/Bluetooth.
     if (!GetTelemetry().connected) {
-        if (action_queue_ != nullptr) {
-            xQueueReset(action_queue_);
-        }
+        (void)prev;
+        if (action_queue_ != nullptr) xQueueReset(action_queue_);
         abort_current_wait_.store(true);
-        if (enable) {
-            SendRawUartByte(109);
-            auto* display = Board::GetInstance().GetDisplay();
-            if (display != nullptr && !IsMusicOrRadioActive()) {
-                display->SetEmotion("confident");
-            }
-            std::lock_guard<std::mutex> lock(state_mutex_);
-            current_action_k_.store(69);
-            current_action_name_ = "🧭 Tự hành 3 dây (SONAR8 + Chân 10-NK)";
-        } else if (prev) {
-            SendRawUartByte(110);
-            auto* display = Board::GetInstance().GetDisplay();
-            if (display != nullptr && !IsMusicOrRadioActive()) {
-                display->SetEmotion("staticstate");
-            }
-            std::lock_guard<std::mutex> lock(state_mutex_);
-            current_action_k_.store(0);
-            current_action_name_ = "Đã dừng Tự hành (Đứng nghiêm)";
-        }
+        QueueActionByK(enable ? 69 : 70, 1, false);
     }
     NotifyStatusChanged();
 }
@@ -648,10 +638,11 @@ void RobonovaController::RunUartRxTask() {
 
             // Byte '!' (DEC 33): MR-C3024FX báo vừa hoàn thành động tác tại main_exit
             if (frame_idx == 0 && b == '!') {
-                if (!ack_supported_.load()) {
+                // Cần thấy ít nhất 2 lần mới tin là BASIC có gửi ACK (tránh 1 byte nhiễu làm chậm nhịp 10s)
+                if (!ack_supported_.load() && ++ack_seen_count_ >= 2) {
                     ESP_LOGI(TAG, "MR-C3024FX supports action-complete ACK (sensor BASIC detected)");
+                    ack_supported_.store(true);
                 }
-                ack_supported_.store(true);
                 xSemaphoreGive(ack_sem_);
                 continue;
             }
@@ -666,7 +657,12 @@ void RobonovaController::RunUartRxTask() {
                 frame[frame_idx++] = b;
                 if (frame_idx == 5) {
                     uint8_t expected_cs = (frame[1] ^ frame[2] ^ frame[3]) & 0x7F;
-                    if (frame[4] == expected_cs || frame[4] == 0x55) {
+                    bool frame_ok = (frame[4] == expected_cs || frame[4] == 0x55);
+                    // Giá trị flags hợp lệ chỉ dùng 4 bit thấp
+                    if (frame_ok && (frame[3] & 0xF0) != 0) frame_ok = false;
+                    valid_frame_streak_ = frame_ok ? (valid_frame_streak_ + 1) : 0;
+                    // Chỉ coi là có dây ETX khi nhận >= 2 gói hợp lệ liên tiếp
+                    if (frame_ok && (valid_frame_streak_ >= 2 || GetTelemetry().connected)) {
                         uint8_t batt_raw = frame[1];
                         uint8_t sonar_raw = frame[2];
                         uint8_t flags = frame[3];
@@ -753,7 +749,7 @@ void RobonovaController::RunAutoBehaviorTask() {
                 continue;
             }
             if (!is_executing_.load() && GetQueueCount() == 0) {
-                QueueActionByK(kDanceCycle[dance_idx % (sizeof(kDanceCycle) / sizeof(kDanceCycle[0]))], 1);
+                QueueActionByK(kDanceCycle[dance_idx % (sizeof(kDanceCycle) / sizeof(kDanceCycle[0]))], 1, false);
                 ++dance_idx;
             }
             continue;
@@ -769,12 +765,12 @@ void RobonovaController::RunAutoBehaviorTask() {
             // Ưu tiên 1: Tự động đứng dậy nếu bị ngã
             if (tel.tilt_fallen_back) {
                 ESP_LOGW(TAG, "AutoSensor: Fallen backward detected -> K19 standup_back");
-                QueueActionByK(19, 1);
+                QueueActionByK(19, 1, false);
                 continue;
             }
             if (tel.tilt_fallen_fwd) {
                 ESP_LOGW(TAG, "AutoSensor: Fallen forward detected -> K25 standup_front");
-                QueueActionByK(25, 1);
+                QueueActionByK(25, 1, false);
                 continue;
             }
 
@@ -783,11 +779,11 @@ void RobonovaController::RunAutoBehaviorTask() {
                 if (auto_climb_stairs_.load() && (tel.sonar_cm < 0 || tel.sonar_cm > 30)) {
                     // Phía trên thoáng nhưng dưới chân có bậc -> Leo cầu thang K66!
                     ESP_LOGI(TAG, "AutoSensor: Foot 10-NK step detected + head clear -> K66 climb_stairs");
-                    QueueActionByK(66, 1);
+                    QueueActionByK(66, 1, false);
                 } else {
                     ESP_LOGI(TAG, "AutoSensor: Foot 10-NK low obstacle -> step back K12 & turn");
-                    QueueActionByK(12, 1);
-                    QueueActionByK(turn_toggle ? 22 : 24, 2);
+                    QueueActionByK(12, 1, false);
+                    QueueActionByK(turn_toggle ? 22 : 24, 2, false);
                     turn_toggle = !turn_toggle;
                 }
                 continue;
@@ -796,16 +792,16 @@ void RobonovaController::RunAutoBehaviorTask() {
             // Ưu tiên 3: Cảm biến siêu âm trên mắt phát hiện vật cản phía trước (< 25cm)
             if (tel.sonar_cm > 0 && tel.sonar_cm < 25) {
                 if (tel.sonar_cm < 12) {
-                    QueueActionByK(53, 1);  // Quá gần -> Né đòn Matrix K53
+                    QueueActionByK(53, 1, false);  // Quá gần -> Né đòn Matrix K53
                 }
-                QueueActionByK(12, 1);      // Lùi 1 nhịp
-                QueueActionByK(turn_toggle ? 34 : 35, 1);  // Quay nhanh tránh vật cản
+                QueueActionByK(12, 1, false);      // Lùi 1 nhịp
+                QueueActionByK(turn_toggle ? 34 : 35, 1, false);  // Quay nhanh tránh vật cản
                 turn_toggle = !turn_toggle;
                 continue;
             }
 
             // Đường thông thoáng -> Tiến về phía trước K11
-            QueueActionByK(11, 1);
+            QueueActionByK(11, 1, false);
         }
     }
 }
