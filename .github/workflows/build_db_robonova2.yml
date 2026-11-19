@@ -29,7 +29,8 @@ jobs:
           python scripts/release.py db-robonova2-s3 --name db-robonova2-s3 2>&1 | tee build_full.log
           grep -E "WAKE_WORD|SR_MN|SR_WN" sdkconfig || true
           cp build/merged-binary.bin build/firmware_db_robonova2_s3_0x0.bin
-          ls -lh build/firmware_db_robonova2_s3_0x0.bin releases/
+          cp build/xiaozhi_vn.bin build/app_only_db_robonova2_s3_0x20000.bin
+          ls -lh build/firmware_db_robonova2_s3_0x0.bin build/app_only_db_robonova2_s3_0x20000.bin releases/
 
       - name: Upload Build Log on Failure
         if: failure()
@@ -54,8 +55,8 @@ jobs:
       - name: Publish Direct .bin to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.3.1-xh-s3e
-          name: "SparkleIoT XH-S3E-AI Robonova2 v2.3.1 (Hybrid Wake: Hi Mina / Hi ESP + Page-1 MCP Robot Tools)"
+          tag_name: v2.3.2-xh-s3e
+          name: "SparkleIoT XH-S3E-AI Robonova2 v2.3.2 (Static IP 192.168.1.232 + Hi Mina + Page-1 MCP)"
           body: |
             Firmware AI Tiếng Việt dành riêng cho **DB-Robonova2 ESP32-S3 (N16R8)**:
             - Đầy đủ 63 động tác gốc `K1`–`K68` qua UART `9600 bps` (`TX=GPIO42`, `RX=GPIO41`)
@@ -65,6 +66,7 @@ jobs:
             - **Cách nạp:** Tải file `firmware_db_robonova2_s3_0x0.bin` bên dưới và nạp tại địa chỉ **`0x0`** trên https://tienhuyiot.github.io/esp_web_flasher/
           files: |
             build/firmware_db_robonova2_s3_0x0.bin
+            build/app_only_db_robonova2_s3_0x20000.bin
             releases/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

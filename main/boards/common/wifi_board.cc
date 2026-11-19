@@ -12,12 +12,74 @@
 #include <esp_log.h>
 
 #include <font_awesome.h>
+#include <esp_netif.h>
 #include <wifi_station.h>
 #include <wifi_configuration_ap.h>
 #include <ssid_manager.h>
 #include "afsk_demod.h"
 
 static const char *TAG = "WifiBoard";
+
+namespace {
+
+void ApplyStaNetworkConfig(bool dns_only = false) {
+    esp_netif_t* sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta_netif == nullptr) {
+        return;
+    }
+
+    Settings netcfg("netcfg", false);
+    int use_static = netcfg.GetInt("use_static", 1);
+    if (use_static == 0) {
+        if (!dns_only) {
+            esp_netif_dhcpc_start(sta_netif);
+            ESP_LOGI(TAG, "Network mode: DHCP client enabled");
+        }
+        return;
+    }
+
+    std::string ip_str   = netcfg.GetString("ip",   "192.168.1.232");
+    std::string gw_str   = netcfg.GetString("gw",   "192.168.1.241");
+    std::string mask_str = netcfg.GetString("mask", "255.255.255.0");
+    std::string dns1_str = netcfg.GetString("dns1", "8.8.8.8");
+    std::string dns2_str = netcfg.GetString("dns2", "8.8.4.4");
+
+    if (!dns_only) {
+        esp_err_t stop_err = esp_netif_dhcpc_stop(sta_netif);
+        if (stop_err != ESP_OK && stop_err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+            ESP_LOGW(TAG, "esp_netif_dhcpc_stop returned 0x%x", stop_err);
+        }
+
+        esp_netif_ip_info_t ip_info = {};
+        if (esp_netif_str_to_ip4(ip_str.c_str(), &ip_info.ip) == ESP_OK &&
+            esp_netif_str_to_ip4(gw_str.c_str(), &ip_info.gw) == ESP_OK &&
+            esp_netif_str_to_ip4(mask_str.c_str(), &ip_info.netmask) == ESP_OK) {
+            ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_set_ip_info(sta_netif, &ip_info));
+        } else {
+            ESP_LOGE(TAG, "Invalid static IP config (%s / %s / %s), falling back to DHCP",
+                     ip_str.c_str(), gw_str.c_str(), mask_str.c_str());
+            esp_netif_dhcpc_start(sta_netif);
+            return;
+        }
+    }
+
+    esp_netif_dns_info_t dns_main = {};
+    dns_main.ip.type = ESP_IPADDR_TYPE_V4;
+    if (esp_netif_str_to_ip4(dns1_str.c_str(), &dns_main.ip.u_addr.ip4) == ESP_OK) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_set_dns_info(sta_netif, ESP_NETIF_DNS_MAIN, &dns_main));
+    }
+
+    esp_netif_dns_info_t dns_backup = {};
+    dns_backup.ip.type = ESP_IPADDR_TYPE_V4;
+    if (esp_netif_str_to_ip4(dns2_str.c_str(), &dns_backup.ip.u_addr.ip4) == ESP_OK) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_set_dns_info(sta_netif, ESP_NETIF_DNS_BACKUP, &dns_backup));
+    }
+
+    ESP_LOGI(TAG, "Static IP configured: IP=%s, GW=%s, Mask=%s, DNS=%s / %s",
+             ip_str.c_str(), gw_str.c_str(), mask_str.c_str(), dns1_str.c_str(), dns2_str.c_str());
+}
+
+}  // namespace
 
 WifiBoard::WifiBoard() {
     Settings settings("wifi", true);
@@ -93,6 +155,7 @@ void WifiBoard::StartNetwork() {
         display->ShowNotification(Lang::Strings::SCANNING_WIFI, 30000);
     });
     wifi_station.OnConnect([this](const std::string& ssid) {
+        ApplyStaNetworkConfig(false);
         auto display = Board::GetInstance().GetDisplay();
         std::string notification = Lang::Strings::CONNECT_TO;
         notification += ssid;
@@ -100,6 +163,7 @@ void WifiBoard::StartNetwork() {
         display->ShowNotification(notification.c_str(), 30000);
     });
     wifi_station.OnConnected([this](const std::string& ssid) {
+        ApplyStaNetworkConfig(true);
         auto display = Board::GetInstance().GetDisplay();
         std::string notification = Lang::Strings::CONNECTED_TO;
         notification += ssid;
@@ -110,6 +174,7 @@ void WifiBoard::StartNetwork() {
         ESP_LOGI(TAG, "WiFi connected successfully - SSID: %s, IP Address: %s", ssid.c_str(), ip_address.c_str());
     });
     wifi_station.Start();
+    ApplyStaNetworkConfig(false);
 
     // Try to connect to WiFi, if failed, launch the WiFi configuration AP
     if (!wifi_station.WaitForConnected(60 * 1000)) {

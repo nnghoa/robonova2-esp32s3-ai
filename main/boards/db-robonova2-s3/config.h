@@ -56,6 +56,6 @@
 #define ROBONOVA_WEB_PORT        8080
 #define ROBONOVA_WEB_CTRL_PORT   32769
 
-#define DB_ROBONOVA2_VERSION     "2.3.1-XH-S3E"
+#define DB_ROBONOVA2_VERSION     "2.3.2-XH-S3E"
 
 #endif // _BOARD_CONFIG_H_

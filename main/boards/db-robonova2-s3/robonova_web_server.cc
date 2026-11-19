@@ -167,6 +167,21 @@ a{color:var(--pri);text-decoration:none}
   </div>
 </div>
 
+<div class="card" style="margin-top:10px">
+  <h3><span>🌐 Cấu hình Mạng Wi-Fi (IP Tĩnh / DHCP)</span></h3>
+  <div class="row">
+    <label class="sw"><input type="checkbox" id="chkStaticIp" checked> Dùng IP Tĩnh (Manual)</label>
+    <input type="text" id="netIp" value="192.168.1.232" placeholder="IP (VD: 192.168.1.232)">
+    <input type="text" id="netGw" value="192.168.1.241" placeholder="Gateway (VD: 192.168.1.241)">
+  </div>
+  <div class="row">
+    <input type="text" id="netMask" value="255.255.255.0" placeholder="Subnet (255.255.255.0)">
+    <input type="text" id="netDns1" value="8.8.8.8" placeholder="DNS 1 (8.8.8.8)">
+    <input type="text" id="netDns2" value="8.8.4.4" placeholder="DNS 2 (8.8.4.4)">
+    <button class="btn-ok" onclick="saveNetCfg()">💾 Lưu IP &amp; Khởi động lại</button>
+  </div>
+</div>
+
 <div class="foot">
   SparkleIoT XH-S3E-AI • Wake: "Hi Mina" • UART 9600 (TXD=GPIO43 -> ERX) • I2C OLED (SDA=IO41, SCL=IO42) •
   <a href="#" onclick="sendCmd({cmd:'toggle_spi_mode'});return false;">Đổi chuẩn OLED (SH1106 1.3" / SSD1306 0.96")</a> •
@@ -191,6 +206,18 @@ function act(k){sendCmd({cmd:'action',k:k});}
 function runCombo(){const s=document.getElementById('comboInp').value.trim();if(s)sendCmd({cmd:'combo',sequence:s});}
 function playSong(dance){const s=document.getElementById('songInp').value.trim();sendCmd({cmd:'music',song:s||'Nhạc trẻ sôi động',dance:dance});}
 function playRadio(st){sendCmd({cmd:'radio',station:st});}
+function saveNetCfg(){
+  if(!confirm('Lưu cấu hình IP và khởi động lại mạch?'))return;
+  sendCmd({
+    cmd:'set_netcfg',
+    use_static:document.getElementById('chkStaticIp').checked,
+    ip:document.getElementById('netIp').value.trim(),
+    gw:document.getElementById('netGw').value.trim(),
+    mask:document.getElementById('netMask').value.trim(),
+    dns1:document.getElementById('netDns1').value.trim(),
+    dns2:document.getElementById('netDns2').value.trim()
+  });
+}
 function updateUi(d){
   document.getElementById('actTxt').textContent='Trạng thái: '+(d.current_action||'Đứng nghỉ')+(d.queue_size?' (Hàng đợi: '+d.queue_size+')':'');
   document.getElementById('chkDance').checked=!!d.dance_with_music;
@@ -561,6 +588,27 @@ std::string RobonovaWebServer::ProcessJsonCommand(const char* json_str, size_t l
         settings.SetInt("oled_type", next);
         if (auto* disp = Board::GetInstance().GetDisplay()) {
             disp->ShowNotification(next ? "OLED -> SH1106 1.3\"" : "OLED -> SSD1306 0.96\"", 3000);
+        }
+        RunAsync("rn_reboot", []() {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            Application::GetInstance().Reboot();
+        });
+    } else if (cmd == "set_netcfg") {
+        Settings netcfg("netcfg", true);
+        cJSON* st = cJSON_GetObjectItem(root, "use_static");
+        netcfg.SetInt("use_static", cJSON_IsFalse(st) ? 0 : 1);
+        auto save_str = [&](const char* key) {
+            if (cJSON* item = cJSON_GetObjectItem(root, key); cJSON_IsString(item) && item->valuestring[0] != '\0') {
+                netcfg.SetString(key, item->valuestring);
+            }
+        };
+        save_str("ip");
+        save_str("gw");
+        save_str("mask");
+        save_str("dns1");
+        save_str("dns2");
+        if (auto* disp = Board::GetInstance().GetDisplay()) {
+            disp->ShowNotification("Đã lưu cấu hình IP!", 3000);
         }
         RunAsync("rn_reboot", []() {
             vTaskDelay(pdMS_TO_TICKS(1000));
