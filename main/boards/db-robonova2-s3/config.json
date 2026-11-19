@@ -9,6 +9,8 @@
                 "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
                 "CONFIG_PARTITION_TABLE_CUSTOM=y",
                 "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions/v2/16m_otto_robot.csv\"",
+                "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y",
+                "CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y",
                 "CONFIG_USE_AFE_WAKE_WORD=n",
                 "CONFIG_USE_CUSTOM_WAKE_WORD=y",
                 "CONFIG_SR_WN_WN9_NONE=y",

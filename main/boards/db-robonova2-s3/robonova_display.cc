@@ -1,3 +1,5 @@
+#include "config.h"
+#ifdef LCD_TYPE_ST7789_SERIAL
 #include "robonova_display.h"
 
 #include <esp_log.h>
@@ -90,3 +92,4 @@ void RobonovaDisplay::SetRobotEyesStyle(bool enable) {
         InitializeRobotEyeGifs();
     }
 }
+#endif // LCD_TYPE_ST7789_SERIAL

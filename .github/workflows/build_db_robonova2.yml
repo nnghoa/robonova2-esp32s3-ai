@@ -54,8 +54,8 @@ jobs:
       - name: Publish Direct .bin to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.2.0-robonova2
-          name: "DB-Robonova2 ESP32-S3 Xiaozhi AI v2.2.0 (Wake: Hi Mina + 3-Wire Autonomous)"
+          tag_name: v2.3.0-xh-s3e
+          name: "SparkleIoT XH-S3E-AI Robonova2 v2.3.0 (Wake: Hi Mina + I2C OLED + TXD GPIO43)"
           body: |
             Firmware AI Tiếng Việt dành riêng cho **DB-Robonova2 ESP32-S3 (N16R8)**:
             - Đầy đủ 63 động tác gốc `K1`–`K68` qua UART `9600 bps` (`TX=GPIO42`, `RX=GPIO41`)

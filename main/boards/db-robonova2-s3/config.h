@@ -5,62 +5,57 @@
 #include <driver/uart.h>
 
 // ============================================================================
-// SƠ ĐỒ DB-ROBONOVA2 ESP32-S3 XIAOZHI AI (ESP32-S3-WROOM-1 N16R8)
-// Giữ nguyên cấu trúc robot gốc MR-C3024FX + Tích hợp AI, Web :8080, Đa phương tiện
+// SƠ ĐỒ SPARKLE-IOT XH-S3E-AI V1.0 (ESP32-S3 N16R8) + OLED I2C + ROBONOVA2
+// - Đã tích hợp sẵn trên bo tím XH-S3E-AI: Mic số, Amp loa (EN=IO17) + Loa hộp,
+//   LED RGB (IO48), nút BOOT (IO0), nút VOL+ (IO40), VOL- (IO39).
+// - Hàng rào 8 chân trên đỉnh mạch (từ trái qua phải khi nhìn mặt lưng):
+//     [1:GND | 2:3V3 | 3:IO42/SCL | 4:IO41/SDA] -> Cắm thẳng màn OLED 4 chân
+//     [5:VIN | 6:GND | 7:RXD(IO44)| 8:TXD(IO43)] -> Nối 3 dây xuống SUPER-M V6.1
 // ============================================================================
 
-// --- Audio I2S Simplex (INMP441 Mic + MAX98357A Speaker Amp) ---
+// --- Audio I2S Simplex tích hợp sẵn trên XH-S3E-AI_V1.0 ---
 #define AUDIO_INPUT_SAMPLE_RATE  16000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
 #define AUDIO_I2S_METHOD_SIMPLEX
 
-// INMP441 Microphone (VDD->3.3V, GND->GND, L/R->GND)
+// MEMS Microphone tích hợp sẵn trên mạch
 #define AUDIO_I2S_MIC_GPIO_WS    GPIO_NUM_4
 #define AUDIO_I2S_MIC_GPIO_SCK   GPIO_NUM_5
 #define AUDIO_I2S_MIC_GPIO_DIN   GPIO_NUM_6
 
-// MAX98357A Amplifier (VIN->5V, GND->GND)
+// Khuếch đại loa I2S tích hợp sẵn + Chân kích hoạt Amp (BẮT BUỘC kéo lên mức HIGH)
 #define AUDIO_I2S_SPK_GPIO_DOUT  GPIO_NUM_7
 #define AUDIO_I2S_SPK_GPIO_BCLK  GPIO_NUM_15
 #define AUDIO_I2S_SPK_GPIO_LRCK  GPIO_NUM_16
+#define AUDIO_AMP_ENABLE_GPIO    GPIO_NUM_17
 
-// --- Nút nhấn BOOT & Cảm biến chạm TTP223 (Hàn nối chân A = Active LOW) ---
+// --- Nút nhấn & Đèn trạng thái có sẵn trên mạch XH-S3E-AI_V1.0 ---
 #define BOOT_BUTTON_GPIO         GPIO_NUM_0
+#define VOLUME_UP_BUTTON_GPIO    GPIO_NUM_40
+#define VOLUME_DOWN_BUTTON_GPIO  GPIO_NUM_39
 #define BUILTIN_LED_GPIO         GPIO_NUM_48
 
-// --- Màn hình 1.54" IPS TFT ST7789 240x240px (Tùy chọn: không gắn vẫn chạy bình thường) ---
-#define LCD_TYPE_ST7789_SERIAL
-#define DISPLAY_CLK_PIN          GPIO_NUM_9   // SCL (SPI CLOCK)
-#define DISPLAY_MOSI_PIN         GPIO_NUM_10  // SDA (SPI DATA)
-#define DISPLAY_RST_PIN          GPIO_NUM_18  // RES (RESET)
-#define DISPLAY_DC_PIN           GPIO_NUM_8   // DC  (DATA/COMMAND)
-#define DISPLAY_CS_PIN           GPIO_NUM_14  // CS  (ENABLE / CHIP SELECT)
-#define DISPLAY_BACKLIGHT_PIN    GPIO_NUM_13  // BLK (BACKLIGHT CONTROL)
+// --- Màn hình OLED 4 chân I2C 128x64 (SH1106 1.3" / SSD1306 0.96") ---
+// Cắm vào 4 chân bên trái: GND | 3V3 | IO42/SCL | IO41/SDA
+#define DISPLAY_SDA_PIN          GPIO_NUM_41
+#define DISPLAY_SCL_PIN          GPIO_NUM_42
+#define DISPLAY_WIDTH            128
+#define DISPLAY_HEIGHT           64
+#define DISPLAY_MIRROR_X         true
+#define DISPLAY_MIRROR_Y         true
 
-#define DISPLAY_WIDTH            240
-#define DISPLAY_HEIGHT           240
-#define DISPLAY_MIRROR_X         false
-#define DISPLAY_MIRROR_Y         false
-#define DISPLAY_SWAP_XY          false
-#define DISPLAY_INVERT_COLOR     true
-#define DISPLAY_RGB_ORDER        LCD_RGB_ELEMENT_ORDER_RGB
-#define DISPLAY_OFFSET_X         0
-#define DISPLAY_OFFSET_Y         0
-#define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
-#define DISPLAY_SPI_MODE         0            // 8-pin ST7789 có chân CS dùng Mode 0 (có thể đổi sang Mode 3 trên Web :8080 nếu dùng màn 7-pin)
-
-// --- Giao tiếp UART với mạch gốc MINIROBOT MR-C3024FX (Robonova2 / MF-17ST) ---
-// GPIO 42 (TX của ESP32-S3) -> Chân 'a' (ERX trên MR-C3024FX, nhận lệnh động tác K1..K68)
-// GPIO 41 (RX của ESP32-S3) <- Chân 'A' (ETX trên MR-C3024FX, gửi phản hồi cảm biến mắt siêu âm + chân 10-NK + pin)
+// --- Giao tiếp UART với mạch lưng BJROBOT SUPER-M V6.1 (MR-C3024FX) ---
+// Chân TXD (GPIO 43) -> Chân trên cùng (ERX - dây Nâu) ở Khu A - Cột 6 (9600 bps)
+// Chân RXD (GPIO 44) <- Tùy chọn dây thứ 4 (bỏ trống khi chạy chế độ 3 dây)
 #define ROBONOVA_UART_NUM        UART_NUM_1
-#define ROBONOVA_UART_TX_PIN     GPIO_NUM_42
-#define ROBONOVA_UART_RX_PIN     GPIO_NUM_41
+#define ROBONOVA_UART_TX_PIN     GPIO_NUM_43
+#define ROBONOVA_UART_RX_PIN     GPIO_NUM_44
 #define ROBONOVA_UART_BAUD_RATE  9600
 
 // --- Cổng Web Control Dashboard + WebSocket ---
 #define ROBONOVA_WEB_PORT        8080
-#define ROBONOVA_WEB_CTRL_PORT   32769        // Tách riêng với OtaServer (ctrl_port 32768 ở cổng 80)
+#define ROBONOVA_WEB_CTRL_PORT   32769
 
-#define DB_ROBONOVA2_VERSION     "2.2.0-HI-MINA"
+#define DB_ROBONOVA2_VERSION     "2.3.0-XH-S3E"
 
 #endif // _BOARD_CONFIG_H_

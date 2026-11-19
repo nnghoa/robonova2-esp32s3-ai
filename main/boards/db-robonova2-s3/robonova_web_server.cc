@@ -168,9 +168,9 @@ a{color:var(--pri);text-decoration:none}
 </div>
 
 <div class="foot">
-  DB-Robonova2 ESP32-S3 Xiaozhi AI • UART 9600 (TX=GPIO42, RX=GPIO41) • ST7789 240x240 •
-  <a href="#" onclick="sendCmd({cmd:'toggle_spi_mode'});return false;">Đổi SPI Mode ST7789 (0/3)</a> •
-  <a href="#" onclick="if(confirm('Bật/Tắt màn hình ST7789 và khởi động lại?'))sendCmd({cmd:'toggle_lcd'});return false;">Bật/Tắt màn hình</a> •
+  SparkleIoT XH-S3E-AI • Wake: "Hi Mina" • UART 9600 (TXD=GPIO43 -> ERX) • I2C OLED (SDA=IO41, SCL=IO42) •
+  <a href="#" onclick="sendCmd({cmd:'toggle_spi_mode'});return false;">Đổi chuẩn OLED (SH1106 1.3" / SSD1306 0.96")</a> •
+  <a href="#" onclick="if(confirm('Bật/Tắt màn hình OLED và khởi động lại?'))sendCmd({cmd:'toggle_lcd'});return false;">Bật/Tắt màn hình</a> •
   <a href="#" onclick="location.href='http://'+location.hostname+'/ota';return false;">Cập nhật Firmware OTA (Cổng 80)</a>
 </div>
 
@@ -556,11 +556,11 @@ std::string RobonovaWebServer::ProcessJsonCommand(const char* json_str, size_t l
         });
     } else if (cmd == "toggle_spi_mode") {
         Settings settings("robonova", true);
-        int cur = settings.GetInt("lcd_spi_mode", DISPLAY_SPI_MODE);
-        int next = (cur == 0) ? 3 : 0;
-        settings.SetInt("lcd_spi_mode", next);
+        int cur = settings.GetInt("oled_type", 1);
+        int next = (cur == 1) ? 0 : 1;
+        settings.SetInt("oled_type", next);
         if (auto* disp = Board::GetInstance().GetDisplay()) {
-            disp->ShowNotification("SPI Mode -> " + std::to_string(next) + " (Khởi động lại)", 3000);
+            disp->ShowNotification(next ? "OLED -> SH1106 1.3\"" : "OLED -> SSD1306 0.96\"", 3000);
         }
         RunAsync("rn_reboot", []() {
             vTaskDelay(pdMS_TO_TICKS(1000));
