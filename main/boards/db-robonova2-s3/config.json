@@ -13,12 +13,14 @@
                 "CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y",
                 "CONFIG_USE_AFE_WAKE_WORD=n",
                 "CONFIG_USE_CUSTOM_WAKE_WORD=y",
-                "CONFIG_SR_WN_WN9_NONE=y",
-                "CONFIG_SR_MN_CN_NONE=y",
-                "CONFIG_SR_MN_EN_MULTINET7_QUANT=y",
-                "CONFIG_CUSTOM_WAKE_WORD=\"hi mina;hey mina;hello mina\"",
+                "CONFIG_SEND_WAKE_WORD_DATA=n",
+                "CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=n",
+                "CONFIG_SR_WN_WN9_HIESP=y",
+                "CONFIG_SR_MN_EN_NONE=y",
+                "CONFIG_SR_MN_CN_MULTINET7_QUANT=y",
+                "CONFIG_CUSTOM_WAKE_WORD=\"hai mi na;hei mi na;he lou mi na;ha luo mi na;ni hao mi na;mi na ya;mi na\"",
                 "CONFIG_CUSTOM_WAKE_WORD_DISPLAY=\"Hi Mina\"",
-                "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=18"
+                "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=16"
             ]
         }
     ]

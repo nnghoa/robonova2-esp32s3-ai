@@ -247,8 +247,20 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     }
 
     samples = bytes_read / sizeof(int32_t);
+    const bool apply_gain = (input_gain_ > 0.0f);
+    const int32_t gain_q8 = apply_gain ? static_cast<int32_t>(input_gain_ * 256.0f) : 256;
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 12;
+        int32_t raw = bit32_buffer[i] >> 12;
+        if (!dc_initialized_) {
+            dc_offset_ = raw;
+            dc_initialized_ = true;
+        } else {
+            dc_offset_ += (raw - dc_offset_) >> 8;
+        }
+        int32_t value = raw - dc_offset_;
+        if (apply_gain) {
+            value = (value * gain_q8) >> 8;
+        }
         dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
     }
     return samples;

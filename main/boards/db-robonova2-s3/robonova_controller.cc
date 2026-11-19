@@ -552,10 +552,11 @@ void RobonovaController::RunActionTask() {
                 current_action_name_ = std::string("K") + std::to_string(item.k_num) + " - " + item.name_vi;
             }
 
-            // Cập nhật biểu cảm mắt trên màn hình 1.54" ST7789 (nếu không đang hiển thị FFT nhạc)
+            // Cập nhật biểu cảm và hiển thị tên động tác trên màn hình OLED
             auto* display = Board::GetInstance().GetDisplay();
             if (display != nullptr && !IsMusicOrRadioActive()) {
                 display->SetEmotion(item.emotion);
+                display->ShowNotification(std::string("K") + std::to_string(item.k_num) + ": " + item.name_vi, 3500);
             }
 
             // Xóa tín hiệu ACK cũ trước khi gửi lệnh mới xuống MR-C3024FX
@@ -858,26 +859,13 @@ void RobonovaController::RegisterMcpTools() {
 
     mcp.AddTool(
         "self.robonova.action",
-        "Điều khiển robot hình người Robonova2 thực hiện đầy đủ 68 động tác nguyên gốc của hãng.\n"
-        "Dùng công cụ này khi người dùng ra lệnh bằng giọng nói yêu cầu robot cử động.\n"
-        "Các giá trị `action` phổ biến (hoặc truyền mã K1..K68):\n"
-        "- Di chuyển: walk_forward (K11 đi tới), walk_backward (K12 đi lùi), fast_walk (K10 đi nhanh), "
-        "new_fast_walk (K33 đi rất nhanh), fast_run (K50 chạy nhanh), turn_left (K22 quay trái), "
-        "turn_right (K24 quay phải), fast_left_turn (K34), fast_right_turn (K35), shift_left (K14 bước ngang trái), "
-        "shift_right (K13 bước ngang phải), left_forward (K17), right_forward (K27), sit_walk_fwd (K60), climb_stairs (K66 leo cầu thang).\n"
-        "- Chào hỏi & Cơ bản: bow (K1 cúi chào), honor_bow (K41 chào danh dự), shake_hand (K58 bắt tay), "
-        "clap_hands (K57 vỗ tay), cheer_up (K55 cổ vũ), hands_up (K2 giơ 2 tay), sit_down (K3 ngồi xuống), "
-        "sit_hands_up (K4), big_reach (K43 vươn vai), toggle_sit_relax (K16 ngồi nghỉ tắt servo).\n"
-        "- Võ thuật & Kungfu: kungfu_1 (K48 múa võ 1), kungfu_2 (K44), kungfu_3 (K45), kungfu_4 (K46), kungfu_5 (K47), "
-        "forward_punch (K29 đấm thẳng), left_attack (K15 đấm trái), right_attack (K20 đấm phải), "
-        "kick_both (K8 đá 2 chân), big_toss (K42 quật ngã), avoid_matrix (K53 né đòn Matrix).\n"
-        "- Thể lực & Nhào lộn: pushup_1 (K40 chống đẩy có nhạc), pushup_2 (K67 chống đẩy 10 cái), "
-        "handstand (K9 trồng chuối), single_foot (K56 đứng 1 chân), goalkeeper (K54 thủ môn), "
-        "tumble_forward (K21 lộn nhào tới), tumble_back (K31 lộn ngược), tumble_left (K28), tumble_right (K30), "
-        "standup_back (K19 đứng dậy khi nằm ngửa), standup_front (K25 đứng dậy khi nằm sấp).\n"
-        "- Nhảy múa: simple_dance (K6 lắc thân), dance_1 (K64), dance_2 (K65), dance_3 (K68), break_dance (K59 nhảy breakdance), wing_move (K7).\n"
-        "- Cảm biến & Tự hành 3 dây (BJROBOT SUPER-M V6.1): auto_explore (K69 / DEC 109 bật tự hành né vật cản bằng mắt siêu âm SONAR(8) + tự leo bậc bằng chân 10-NK AD(6)), "
-        "stop_auto (K70 / DEC 110 dừng tự hành về đứng nghiêm), test_sensors (K71 / DEC 111 kiểm tra nhanh mắt siêu âm & cảm biến chân bằng nhạc và cử chỉ).",
+        "BẮT BUỘC DÙNG KHI NGƯỜI DÙNG RA LỆNH CỬ ĐỘNG CƠ THỂ ROBOT HÌNH NGƯỜI 17 SERVO (cúi chào, múa võ, đi, nhảy, chống đẩy, đứng dậy, tự hành...).\n"
+        "`action` nhận slug, mã K1..K71, hoặc tiếng Việt:\n"
+        "- Chào/Cơ bản: bow (K1 cúi chào), honor_bow (K41 chào danh dự), shake_hand (K58 bắt tay), clap_hands (K57 vỗ tay), cheer_up (K55 cổ vũ), hands_up (K2 giơ tay), sit_down (K3 ngồi), big_reach (K43 vươn vai), toggle_sit_relax (K16 nghỉ).\n"
+        "- Võ thuật: kungfu_1 (K48 múa võ), kungfu_2..5 (K44..K47), forward_punch (K29 đấm thẳng), left_attack (K15), right_attack (K20), kick_both (K8 đá), big_toss (K42 quật), avoid_matrix (K53 né Matrix).\n"
+        "- Di chuyển: walk_forward (K11 đi tới), walk_backward (K12 đi lùi), fast_walk (K10), fast_run (K50 chạy), turn_left (K22 quay trái), turn_right (K24 quay phải), shift_left (K14), shift_right (K13), climb_stairs (K66 leo bậc).\n"
+        "- Thể lực/Nhào lộn: pushup_1 (K40 chống đẩy), pushup_2 (K67), handstand (K9 trồng chuối), single_foot (K56), goalkeeper (K54), tumble_forward (K21 lộn tới), tumble_back (K31), standup_back (K19 đứng dậy ngửa), standup_front (K25 đứng dậy sấp).\n"
+        "- Nhảy & Tự hành: dance_1 (K64 nhảy), dance_2 (K65), dance_3 (K68), break_dance (K59), auto_explore (K69 bật tự hành né vật cản), stop_auto (K70 dừng tự hành), test_sensors (K71 test cảm biến).",
         PropertyList({
             Property("action", kPropertyTypeString),
             Property("repeat", kPropertyTypeInteger, 1, 1, 10),
@@ -897,8 +885,7 @@ void RobonovaController::RegisterMcpTools() {
 
     mcp.AddTool(
         "self.robonova.combo",
-        "Thực hiện chuỗi liên hoàn nhiều động tác võ thuật / nhảy múa / biểu diễn theo thứ tự.\n"
-        "Ví dụ `sequence`: \"K41,K48,K29,K8,K53,K1\" hoặc \"bow,kungfu_1,pushup_1,clap_hands\".",
+        "Thực hiện chuỗi liên hoàn nhiều động tác robot theo thứ tự (VD `sequence`: \"bow,kungfu_1,forward_punch,kick_both,clap_hands\" hoặc \"K41,K48,K29,K1\").",
         PropertyList({
             Property("sequence", kPropertyTypeString),
         }),
@@ -911,8 +898,7 @@ void RobonovaController::RegisterMcpTools() {
 
     mcp.AddTool(
         "self.robonova.dance_music",
-        "Bật hoặc tắt chế độ robot vừa phát nhạc trực tuyến vừa nhảy múa đồng bộ theo nhạc.\n"
-        "Nếu truyền `song_name`, robot sẽ tải phát bài hát đó và bắt đầu nhảy.",
+        "Bật/tắt chế độ robot vừa phát nhạc vừa nhảy múa theo nhạc (`song_name` tùy chọn).",
         PropertyList({
             Property("enable", kPropertyTypeBoolean, true),
             Property("song_name", kPropertyTypeString, std::string("")),
@@ -933,8 +919,7 @@ void RobonovaController::RegisterMcpTools() {
 
     mcp.AddTool(
         "self.robonova.auto_sensor_mode",
-        "Bật/tắt chế độ tự hành thông minh sử dụng mắt siêu âm SONAR(8) và cảm biến khoảng cách 10-NK AD(6) dưới bàn chân "
-        "(hoạt động ngay trên kết nối 3 dây GPIO42->ERX bằng mã lệnh 109/110 trên mạch SUPER-M V6.1, hoặc 4 dây nếu có ETX->GPIO41).",
+        "Bật/tắt chế độ robot tự hành tránh vật cản bằng mắt siêu âm & cảm biến chân (K69/K70).",
         PropertyList({
             Property("enable", kPropertyTypeBoolean),
             Property("auto_climb_stairs", kPropertyTypeBoolean, false),
@@ -949,8 +934,7 @@ void RobonovaController::RegisterMcpTools() {
 
     mcp.AddTool(
         "self.robonova.stop",
-        "Dừng ngay lập tức mọi chuỗi động tác đang xếp hàng, tắt chế độ nhảy/tự hành. "
-        "Đặt `relax_servos=true` nếu người dùng yêu cầu 'ngồi nghỉ tắt động cơ'.",
+        "Dừng ngay mọi động tác robot đang chạy (`relax_servos=true` để ngồi nghỉ tắt động cơ).",
         PropertyList({
             Property("relax_servos", kPropertyTypeBoolean, false),
         }),
@@ -962,8 +946,7 @@ void RobonovaController::RegisterMcpTools() {
 
     mcp.AddTool(
         "self.robonova.get_status",
-        "Lấy trạng thái chi tiết của robot Robonova2: địa chỉ Web điều khiển cổng 8080 (VD http://192.168.1.68:8080), "
-        "động tác hiện tại, mức pin, khoảng cách mắt siêu âm (cm), và trạng thái cảm biến chân 10-NK.",
+        "Lấy trạng thái robot Robonova2 (Web cổng 8080, động tác hiện tại, chế độ tự hành, cảm biến).",
         PropertyList(),
         [this](const PropertyList&) -> ReturnValue {
             return BuildStatusJson();

@@ -48,15 +48,32 @@ void McpServer::AddCommonTools() {
     // Do not add custom tools here.
     // Custom tools must be added in the board's InitializeTools function.
 
+    std::string device_status_desc =
+        "Provides the real-time information of the device, including audio speaker, screen, battery, and network.\n"
+        "Use this tool for:\n"
+        "1. Answering questions about current condition (e.g. volume, IP, battery).\n"
+        "2. Checking status before adjusting volume.";
+    if (!original_tools.empty()) {
+        device_status_desc +=
+            "\nCRITICAL ROBOT BODY OVERRIDE: Thiết bị này CHÍNH LÀ CƠ THỂ ROBOT HÌNH NGƯỜI 17 SERVO (Robonova2 / Metal Fighter) CÓ TAY CHÂN THẬT! "
+            "Khi người dùng yêu cầu bất kỳ cử động cơ thể nào (cúi chào, chào hỏi, bắt tay, vỗ tay, múa võ, kungfu, đấm, đá, đi tới, đi lùi, chạy, rẽ trái/phải, "
+            "nhảy múa, chống đẩy, trồng chuối, lộn nhào, đứng dậy, ngồi, tự hành...), BẮT BUỘC GỌI NGAY `self.robonova.action` hoặc `self.robonova.combo`! "
+            "TUYỆT ĐỐI KHÔNG nói bạn là AI không có cơ thể!";
+    }
+
     AddTool("self.get_device_status",
-        "Provides the real-time information of the device, including the current status of the audio speaker, screen, battery, network, etc.\n"
-        "Use this tool for: \n"
-        "1. Answering questions about current condition (e.g. what is the current volume of the audio speaker?)\n"
-        "2. As the first step to control the device (e.g. turn up / down the volume of the audio speaker, etc.)",
+        device_status_desc,
         PropertyList(),
         [&board](const PropertyList& properties) -> ReturnValue {
             return board.GetDeviceStatusJson();
         });
+
+    // Place board-specific hardware tools (e.g. self.robonova.*) IMMEDIATELY after self.get_device_status
+    // so they are always in Page 1 of tools/list and never pushed behind music/radio pagination!
+    if (!original_tools.empty()) {
+        tools_.insert(tools_.end(), original_tools.begin(), original_tools.end());
+        original_tools.clear();
+    }
 
     AddTool("self.network.ip2qrcode",
         "Print the QR code of the IP address connected to WiFi network.\n"
@@ -208,18 +225,7 @@ void McpServer::AddCommonTools() {
     auto music = Application::GetInstance().GetMusic();
      if (music) {
          AddTool("self.music.play_song",
-				 "Play a specified song ONLINE. Đây là chế độ PHÁT NHẠC MẶC ĐỊNH.\n"
-				 "Khi người dùng nói: 'phát nhạc', 'mở nhạc', 'phát bài hát', "
-				 "'play music', 'play song', 'mở bài ...', AI phải ưu tiên dùng tool này.\n"
-				 "\n"
-				 "Chỉ dùng SD card nếu người dùng nói rõ: 'nhạc trong thẻ nhớ', "
-				 "'nhạc offline', 'bài trong thẻ', 'SD card', 'chạy nhạc nội bộ', v.v.\n"
-				 "\n"
-				 "Args:\n"
-				 "  song_name: Tên bài hát (bắt buộc)\n"
-				 "  artist_name: Tên ca sĩ (tùy chọn)\n"
-				 "Return:\n"
-				 "  Phát bài hát online ngay lập tức.\n",
+                 "Play a song ONLINE (default music player when user says phát nhạc/mở bài hát).",
                  PropertyList({
                      Property("song_name", kPropertyTypeString),      // Song name (required)
                      Property("artist_name", kPropertyTypeString, "") // Artist name (optional, defaults to empty string)
@@ -1462,11 +1468,14 @@ void McpServer::GetToolsList(int id, const std::string& cursor, bool list_user_o
     } else {
         json += "],\"nextCursor\":\"" + next_cursor + "\"}";
     }
+    ESP_LOGI(TAG, "tools/list -> %u bytes, nextCursor='%s'",
+             static_cast<unsigned>(json.length()), next_cursor.c_str());
     
     ReplyResult(id, json);
 }
 
 void McpServer::DoToolCall(int id, const std::string& tool_name, const cJSON* tool_arguments) {
+    ESP_LOGI(TAG, "tools/call -> %s", tool_name.c_str());
     auto tool_iter = std::find_if(tools_.begin(), tools_.end(), 
                                  [&tool_name](const McpTool* tool) { 
                                      return tool->name() == tool_name; 

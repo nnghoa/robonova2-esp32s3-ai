@@ -233,6 +233,11 @@ public:
             AUDIO_I2S_MIC_GPIO_SCK,
             AUDIO_I2S_MIC_GPIO_WS,
             AUDIO_I2S_MIC_GPIO_DIN);
+        static bool gain_configured = false;
+        if (!gain_configured) {
+            audio_codec.SetInputGain(2.5f);
+            gain_configured = true;
+        }
         return &audio_codec;
     }
 
