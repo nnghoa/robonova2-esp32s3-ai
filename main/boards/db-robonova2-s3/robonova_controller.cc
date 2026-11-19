@@ -24,6 +24,7 @@
 #include "esp32_radio.h"
 #include "mcp_server.h"
 #include "settings.h"
+#include "xh_s3e_smart_audio.h"
 
 #define TAG "RobonovaCtrl"
 
@@ -561,6 +562,7 @@ void RobonovaController::RunActionTask() {
 
             // Xóa tín hiệu ACK cũ trước khi gửi lệnh mới xuống MR-C3024FX
             xSemaphoreTake(ack_sem_, 0);
+            XhS3eVoiceDiag::GetInstance().RecordUartTx(item.k_num, item.uart_byte);
             SendRawUartByte(item.uart_byte);
             NotifyStatusChanged();
 
@@ -846,6 +848,26 @@ std::string RobonovaController::BuildStatusJson() const {
     cJSON_AddBoolToObject(sensor, "fallen_forward", tel.tilt_fallen_fwd);
     cJSON_AddBoolToObject(sensor, "low_battery", tel.low_battery_alarm);
     cJSON_AddItemToObject(root, "sensors", sensor);
+
+    auto vd = XhS3eVoiceDiag::GetInstance().GetSnapshot();
+    cJSON* vdiag = cJSON_CreateObject();
+    cJSON_AddStringToObject(vdiag, "device_state", vd.device_state.c_str());
+    cJSON_AddStringToObject(vdiag, "mic_mode", vd.mic_mode.c_str());
+    cJSON_AddNumberToObject(vdiag, "mic_gain", vd.mic_gain);
+    cJSON_AddNumberToObject(vdiag, "mic_snr", vd.mic_best_snr);
+    cJSON_AddNumberToObject(vdiag, "mic_raw_peak", vd.mic_raw_peak);
+    cJSON_AddNumberToObject(vdiag, "mic_raw_rms", vd.mic_raw_rms);
+    cJSON_AddNumberToObject(vdiag, "wake_count", vd.wake_count);
+    cJSON_AddStringToObject(vdiag, "last_wake_phrase", vd.last_wake_phrase.c_str());
+    cJSON_AddNumberToObject(vdiag, "last_wake_prob", vd.last_wake_prob);
+    cJSON_AddStringToObject(vdiag, "last_timeout_phrase", vd.last_timeout_phrase.c_str());
+    cJSON_AddNumberToObject(vdiag, "last_timeout_prob", vd.last_timeout_prob);
+    cJSON_AddStringToObject(vdiag, "last_stt", vd.last_stt.c_str());
+    cJSON_AddStringToObject(vdiag, "last_tts", vd.last_tts.c_str());
+    cJSON_AddStringToObject(vdiag, "last_mcp_tool", vd.last_mcp_tool.c_str());
+    cJSON_AddNumberToObject(vdiag, "last_uart_k", vd.last_uart_k);
+    cJSON_AddNumberToObject(vdiag, "last_uart_byte", vd.last_uart_byte);
+    cJSON_AddItemToObject(root, "voice_diag", vdiag);
 
     char* printed = cJSON_PrintUnformatted(root);
     std::string result = printed ? printed : "{}";

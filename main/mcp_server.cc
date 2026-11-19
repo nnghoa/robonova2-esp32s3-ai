@@ -23,6 +23,9 @@
 #include "esp32_sd_music.h"
 #include "wifi_station.h"
 #include "system_info.h"
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+#include "boards/db-robonova2-s3/xh_s3e_smart_audio.h"
+#endif
 
 #define TAG "MCP"
 
@@ -1476,6 +1479,9 @@ void McpServer::GetToolsList(int id, const std::string& cursor, bool list_user_o
 
 void McpServer::DoToolCall(int id, const std::string& tool_name, const cJSON* tool_arguments) {
     ESP_LOGI(TAG, "tools/call -> %s", tool_name.c_str());
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+    XhS3eVoiceDiag::GetInstance().RecordMcpTool(tool_name);
+#endif
     auto tool_iter = std::find_if(tools_.begin(), tools_.end(), 
                                  [&tool_name](const McpTool* tool) { 
                                      return tool->name() == tool_name; 

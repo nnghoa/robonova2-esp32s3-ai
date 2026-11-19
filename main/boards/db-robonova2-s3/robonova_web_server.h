@@ -33,6 +33,7 @@ private:
     static esp_err_t HandleApiActionsGet(httpd_req_t* req);
     static esp_err_t HandleApiStatusGet(httpd_req_t* req);
     static esp_err_t HandleApiCommandPost(httpd_req_t* req);
+    static esp_err_t HandleApiPlayPcmPost(httpd_req_t* req);
     static esp_err_t HandleWs(httpd_req_t* req);
 
     std::string ProcessJsonCommand(const char* json_str, size_t len);

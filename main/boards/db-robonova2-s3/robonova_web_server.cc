@@ -20,6 +20,8 @@
 #include "mcp_server.h"
 #include "robonova_controller.h"
 #include "settings.h"
+#include "xh_s3e_smart_audio.h"
+#include <esp_heap_caps.h>
 
 #define TAG "RobonovaWeb"
 
@@ -342,6 +344,12 @@ bool RobonovaWebServer::Start(int port) {
     cmd_uri.handler = HandleApiCommandPost;
     httpd_register_uri_handler(server_, &cmd_uri);
 
+    httpd_uri_t pcm_uri = {};
+    pcm_uri.uri = "/api/play_pcm";
+    pcm_uri.method = HTTP_POST;
+    pcm_uri.handler = HandleApiPlayPcmPost;
+    httpd_register_uri_handler(server_, &pcm_uri);
+
     httpd_uri_t ws_uri = {};
     ws_uri.uri = "/ws";
     ws_uri.method = HTTP_GET;
@@ -413,6 +421,61 @@ esp_err_t RobonovaWebServer::HandleApiCommandPost(httpd_req_t* req) {
     httpd_resp_set_type(req, "application/json; charset=utf-8");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_sendstr(req, reply.c_str());
+}
+
+esp_err_t RobonovaWebServer::HandleApiPlayPcmPost(httpd_req_t* req) {
+    if (req->content_len <= 0 || req->content_len > 256000) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PCM length");
+        return ESP_FAIL;
+    }
+    const size_t total_bytes = static_cast<size_t>(req->content_len);
+    uint8_t* psram_buf = static_cast<uint8_t*>(heap_caps_malloc(total_bytes, MALLOC_CAP_SPIRAM));
+    if (psram_buf == nullptr) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "PSRAM alloc failed");
+        return ESP_FAIL;
+    }
+
+    size_t got = 0;
+    while (got < total_bytes) {
+        int r = httpd_req_recv(req, reinterpret_cast<char*>(psram_buf + got), total_bytes - got);
+        if (r <= 0) {
+            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            heap_caps_free(psram_buf);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "PCM recv failed");
+            return ESP_FAIL;
+        }
+        got += static_cast<size_t>(r);
+    }
+
+    int vol = 85;
+    char query[64] = {0};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        char vol_str[16] = {0};
+        if (httpd_query_key_value(query, "vol", vol_str, sizeof(vol_str)) == ESP_OK) {
+            vol = std::clamp(std::atoi(vol_str), 10, 100);
+        }
+    }
+
+    struct PlayJob {
+        int16_t* pcm;
+        size_t samples;
+        int vol;
+    };
+    auto* job = new PlayJob{reinterpret_cast<int16_t*>(psram_buf), got / sizeof(int16_t), vol};
+    xTaskCreate([](void* arg) {
+        auto* j = static_cast<PlayJob*>(arg);
+        auto* smart_codec = dynamic_cast<XhS3eSmartAudioCodec*>(Board::GetInstance().GetAudioCodec());
+        if (smart_codec != nullptr) {
+            Application::GetInstance().GetAudioService().UpdateOutputTimestamp();
+            smart_codec->PlayRawPcm16kDirect(j->pcm, j->samples, j->vol);
+        }
+        heap_caps_free(j->pcm);
+        delete j;
+        vTaskDelete(nullptr);
+    }, "play_pcm_test", 4096, job, 4, nullptr);
+
+    httpd_resp_set_type(req, "application/json; charset=utf-8");
+    return httpd_resp_sendstr(req, "{\"success\":true}");
 }
 
 esp_err_t RobonovaWebServer::HandleWs(httpd_req_t* req) {
@@ -497,7 +560,20 @@ std::string RobonovaWebServer::ProcessJsonCommand(const char* json_str, size_t l
 
     // 2. Xử lý lệnh trực tiếp từ giao diện Web Control :8080
     std::string cmd = cJSON_IsString(cmd_item) ? cmd_item->valuestring : "";
-    if (cmd == "action") {
+    if (cmd == "mic_diag") {
+        cJSON_Delete(root);
+        return XhS3eVoiceDiag::GetInstance().GetMicScanReportJson();
+    } else if (cmd == "rescan_mic") {
+        cJSON_Delete(root);
+        if (auto* sc = dynamic_cast<XhS3eSmartAudioCodec*>(Board::GetInstance().GetAudioCodec())) {
+            sc->RescanMicrophone(true);
+        }
+        return XhS3eVoiceDiag::GetInstance().GetMicScanReportJson();
+    } else if (cmd == "wake_chat") {
+        cJSON_Delete(root);
+        Application::GetInstance().ToggleChatState();
+        return ctrl.BuildStatusJson();
+    } else if (cmd == "action") {
         cJSON* k_item = cJSON_GetObjectItem(root, "k");
         cJSON* rep_item = cJSON_GetObjectItem(root, "repeat");
         int rep = cJSON_IsNumber(rep_item) ? rep_item->valueint : 1;

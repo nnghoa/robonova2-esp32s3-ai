@@ -13,6 +13,9 @@
 #include "wifi_station.h"
 #include "sd_card.h"
 #include "esp32_sd_music.h"
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+#include "boards/db-robonova2-s3/xh_s3e_smart_audio.h"
+#endif
 
 #include <cstring>
 #include <esp_log.h>
@@ -511,6 +514,9 @@ void Application::Start() {
                 auto text = cJSON_GetObjectItem(root, "text");
                 if (cJSON_IsString(text)) {
                     ESP_LOGI(TAG, "<< %s", text->valuestring);
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+                    XhS3eVoiceDiag::GetInstance().RecordTts(text->valuestring);
+#endif
                     Schedule([this, display, message = std::string(text->valuestring)]() {
                         display->SetChatMessage("assistant", message.c_str());
                     });
@@ -520,6 +526,9 @@ void Application::Start() {
             auto text = cJSON_GetObjectItem(root, "text");
             if (cJSON_IsString(text)) {
                 ESP_LOGI(TAG, ">> %s", text->valuestring);
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+                XhS3eVoiceDiag::GetInstance().RecordStt(text->valuestring);
+#endif
                 Schedule([this, display, message = std::string(text->valuestring)]() {
                     display->SetChatMessage("user", message.c_str());
                 });
@@ -718,6 +727,9 @@ void Application::SetDeviceState(DeviceState state) {
     auto previous_state = device_state_;
     device_state_ = state;
     ESP_LOGI(TAG, "STATE: %s", STATE_STRINGS[device_state_]);
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+    XhS3eVoiceDiag::GetInstance().SetDeviceState(STATE_STRINGS[device_state_]);
+#endif
 
     // Send the state change event
     DeviceStateEventManager::GetInstance().PostStateChangeEvent(previous_state, state);

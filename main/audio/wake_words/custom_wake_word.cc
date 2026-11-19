@@ -2,6 +2,9 @@
 #include "audio_service.h"
 #include "system_info.h"
 #include "assets.h"
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+#include "boards/db-robonova2-s3/xh_s3e_smart_audio.h"
+#endif
 
 #include <esp_log.h>
 #include <esp_heap_caps.h>
@@ -304,6 +307,9 @@ void CustomWakeWord::AudioDetectionTask() {
 
         if (++chunks_since_log >= 156) {  // ~5 seconds
             int rms = total_samples > 0 ? static_cast<int>(std::sqrt(static_cast<double>(sum_sq) / total_samples)) : 0;
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+            XhS3eVoiceDiag::GetInstance().RecordMicLevel(window_peak, rms);
+#endif
             ESP_LOGI(TAG, "Mic ready: raw_peak=%d, raw_rms=%d, free_sram=%u, min_sram=%u",
                      window_peak, rms,
                      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
@@ -323,6 +329,9 @@ void CustomWakeWord::AudioDetectionTask() {
                 int cmd_idx = mn_result->command_id[i] - 1;
                 ESP_LOGI(TAG, "WAKE WORD DETECTED: id=%d, phrase='%s', prob=%.3f",
                          mn_result->command_id[i], mn_result->string, mn_result->prob[i]);
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+                XhS3eVoiceDiag::GetInstance().RecordWakeDetected(mn_result->string, mn_result->prob[i]);
+#endif
                 if (cmd_idx >= 0 && cmd_idx < static_cast<int>(commands_.size())) {
                     auto& command = commands_[cmd_idx];
                     if (command.action == "wake") {
@@ -342,6 +351,9 @@ void CustomWakeWord::AudioDetectionTask() {
             if (mn_result != nullptr && mn_result->num > 0) {
                 ESP_LOGI(TAG, "Speech timeout (below %.2f): top_id=%d, phrase='%s', prob=%.3f",
                          threshold_, mn_result->command_id[0], mn_result->string, mn_result->prob[0]);
+#ifdef CONFIG_BOARD_TYPE_DB_ROBONOVA2_S3
+                XhS3eVoiceDiag::GetInstance().RecordWakeTimeout(mn_result->string, mn_result->prob[0]);
+#endif
             }
             multinet_->clean(multinet_model_data_);
         }

@@ -16,6 +16,7 @@
 #include "led/single_led.h"
 #include "robonova_controller.h"
 #include "robonova_web_server.h"
+#include "xh_s3e_smart_audio.h"
 #include "settings.h"
 #include "wifi_board.h"
 
@@ -224,15 +225,12 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        static NoAudioCodecSimplex audio_codec(
+        static XhS3eSmartAudioCodec audio_codec(
             AUDIO_INPUT_SAMPLE_RATE,
             AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_SPK_GPIO_BCLK,
             AUDIO_I2S_SPK_GPIO_LRCK,
-            AUDIO_I2S_SPK_GPIO_DOUT,
-            AUDIO_I2S_MIC_GPIO_SCK,
-            AUDIO_I2S_MIC_GPIO_WS,
-            AUDIO_I2S_MIC_GPIO_DIN);
+            AUDIO_I2S_SPK_GPIO_DOUT);
         return &audio_codec;
     }
 
