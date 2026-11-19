@@ -6,7 +6,6 @@
 #include <freertos/event_groups.h>
 
 #include <esp_attr.h>
-#include <esp_afe_sr_models.h>
 #include <esp_mn_iface.h>
 #include <esp_mn_models.h>
 #include <model_path.h>
@@ -44,10 +43,6 @@ private:
         std::string action;
     };
 
-    // Hybrid AFE (NS + WebRTC AGC + optional WakeNet9) + MultiNet7 custom wake word
-    const esp_afe_sr_iface_t* afe_iface_ = nullptr;
-    esp_afe_sr_data_t* afe_data_ = nullptr;
-    std::vector<std::string> wakenet_words_;
     EventGroupHandle_t event_group_ = nullptr;
     TaskHandle_t detection_task_ = nullptr;
     StaticTask_t* detection_task_buffer_ = nullptr;
@@ -60,9 +55,12 @@ private:
     char* mn_name_ = nullptr;
     std::string language_ = "cn";
     int duration_ = 3000;
-    float threshold_ = 0.16f;
+    float threshold_ = 0.12f;
     std::deque<Command> commands_;
-    std::vector<int16_t> mn_accum_;
+
+    std::mutex input_mutex_;
+    std::condition_variable input_cv_;
+    std::vector<int16_t> input_buffer_;
     std::atomic<bool> need_mn_clean_{false};
 
     std::function<void(const std::string& wake_word)> wake_word_detected_callback_;
