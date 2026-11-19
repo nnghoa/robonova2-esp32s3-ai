@@ -175,9 +175,9 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
         }
     }
 
-    // Sensitive threshold (0.12) without AFE/AGC clipping distortion
-    if (threshold_ > 0.12f) {
-        threshold_ = 0.12f;
+    // Sensitive threshold (0.10) without AFE/AGC clipping distortion
+    if (threshold_ > 0.10f) {
+        threshold_ = 0.10f;
     }
 
     multinet_ = esp_mn_handle_from_name(mn_name_);

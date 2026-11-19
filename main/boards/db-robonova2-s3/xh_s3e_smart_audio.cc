@@ -176,26 +176,26 @@ XhS3eSmartAudioCodec::XhS3eSmartAudioCodec(int input_sample_rate, int output_sam
 
     InitSpeakerTx();
 
+    // Hardware verified: mode [12] = I2S(WS=4, SCK=5, DIN=6, LEFT) with 1.0x gain (>>12 = +24dB)
     Settings settings("robonova", false);
-    int saved_mode = settings.GetInt("mic_mode", -1);
+    int saved_mode = settings.GetInt("mic_mode", 12);
     int saved_gain_x100 = settings.GetInt("mic_gain_x100", 100);
-    int saved_snr_x10 = settings.GetInt("mic_snr_x10", 0);
+    int saved_snr_x10 = settings.GetInt("mic_snr_x10", 100);
 
     if (saved_mode >= 0 && saved_mode < kNumCandidates) {
         selected_mode_idx_ = saved_mode;
         calibrated_gain_ = std::clamp(saved_gain_x100 / 100.0f, 0.5f, 20.0f);
         if (OpenMicMode(selected_mode_idx_, &rx_handle_)) {
             is_pdm_ = kCandidates[selected_mode_idx_].is_pdm;
-            ESP_LOGI(TAG, "Loaded saved mic mode [%d] %s (gain=%.2fx, snr=%.1fx)",
+            ESP_LOGI(TAG, "Initialized verified mic mode [%d] %s (gain=%.2fx)",
                      selected_mode_idx_, kCandidates[selected_mode_idx_].label,
-                     calibrated_gain_, saved_snr_x10 / 10.0f);
+                     calibrated_gain_);
             XhS3eVoiceDiag::GetInstance().SetMicInfo(
                 kCandidates[selected_mode_idx_].label, calibrated_gain_, saved_snr_x10 / 10.0f);
             return;
         }
     }
 
-    // First boot (or uncalibrated): perform acoustic loopback auto-detection!
     RescanMicrophone(true);
 }
 
@@ -528,11 +528,10 @@ void XhS3eSmartAudioCodec::PlayRawPcm16kDirect(const int16_t* pcm16k, size_t sam
     if (pcm16k == nullptr || samples < 2 || tx_handle_ == nullptr) {
         return;
     }
-    std::lock_guard<std::mutex> tx_lk(tx_mutex_);
-    bool need_temp_enable = !output_enabled_;
-    if (need_temp_enable) {
-        i2s_channel_enable(tx_handle_);
+    if (!output_enabled_) {
+        EnableOutput(true);
     }
+    std::lock_guard<std::mutex> tx_lk(tx_mutex_);
 
     // Exact 3:2 polyphase upsampling from 16000 Hz -> 24000 Hz in 10ms chunks (160 -> 240 samples)
     int16_t out24k[240];
@@ -555,10 +554,6 @@ void XhS3eSmartAudioCodec::PlayRawPcm16kDirect(const int16_t* pcm16k, size_t sam
 
     int16_t silence[240] = {0};
     WriteSpeakerDirectLocked(silence, 240, 0);
-
-    if (need_temp_enable) {
-        i2s_channel_disable(tx_handle_);
-    }
 }
 
 int XhS3eSmartAudioCodec::Write(const int16_t* data, int samples) {
