@@ -152,19 +152,27 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
         return false;
     }
 
-    // Add extra Vietnamese-accent Pinyin variants if using Chinese MultiNet ("Hi Mina" / "Mina ơi" / "Ê Mina")
+    // Add comprehensive Vietnamese + English (male & female) Pinyin variants for "Hi Mina" / "Mina"
     if (strstr(mn_name_, "cn") != nullptr) {
         const char* extra_vn_phrases[] = {
             "hai mi na",
+            "ai mi na",
+            "ha mi na",
+            "hai mi ne",
+            "ai mi ne",
             "hei mi na",
+            "hei mi ne",
+            "ei mi na",
             "he lou mi na",
             "ha luo mi na",
             "ni hao mi na",
             "mi na ei",
             "mi na a",
-            "ei mi na",
             "a mi na",
             "mi na",
+            "mi ne",
+            "mi nan",
+            "mi la",
         };
         for (const char* p : extra_vn_phrases) {
             bool exists = std::any_of(commands_.begin(), commands_.end(),
